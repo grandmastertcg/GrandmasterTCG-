@@ -6,11 +6,19 @@ export async function GET() {
     const { data, error } = await supabaseAdmin()
       .from("products")
       .select("id,name,game,set_name,condition,price_pence,image_url,stock")
-      .eq("active", true).gt("stock", 0).order("created_at", { ascending: false });
+      .eq("active", true)
+      .gt("stock", 0)
+      .order("created_at", { ascending: false });
+
     if (error) throw error;
+
     return NextResponse.json({ products: data ?? [] });
-  } catch {
-    // The storefront keeps sample listings visible until the database is connected.
-    return NextResponse.json({ products: [] }, { status: 503 });
+  } catch (error) {
+    console.error("SUPABASE PRODUCTS ERROR:", error);
+
+    return NextResponse.json(
+      { products: [] },
+      { status: 503 }
+    );
   }
 }
