@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase-browser";
 
 export default function AddProductPage() {
