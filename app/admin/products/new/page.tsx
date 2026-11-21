@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useState } from "react";
 import { supabase } from "../../../../lib/supabase-browser";
 
 export default function AddProductPage() {
@@ -15,7 +15,53 @@ export default function AddProductPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+const [accessStatus, setAccessStatus] = useState<
+    "checking" | "allowed" | "denied"
+  >("checking");
 
+  useEffect(() => {
+    let active = true;
+
+    async function checkAdmin() {
+      try {
+        const { data, error } =
+          await supabase.auth.getSession();
+
+        if (error || !data.session) {
+          if (active) setAccessStatus("denied");
+          return;
+        }
+
+        const response = await fetch("/api/admin/check", {
+          headers: {
+            Authorization: `Bearer ${data.session.access_token}`,
+          },
+          cache: "no-store",
+        });
+
+        if (!active) return;
+
+        if (!response.ok) {
+          setAccessStatus("denied");
+          return;
+        }
+
+        const result = await response.json();
+
+        setAccessStatus(
+          result.admin === true ? "allowed" : "denied"
+        );
+      } catch {
+        if (active) setAccessStatus("denied");
+      }
+    }
+
+    checkAdmin();
+
+    return () => {
+      active = false;
+    };
+  }, []);
   async function saveProduct(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -85,7 +131,18 @@ export default function AddProductPage() {
     display: "grid",
     gap: 6,
   };
+if (accessStatus === "checking") {
+  return <main>Checking administrator access...</main>;
+}
 
+if (accessStatus === "denied") {
+  return (
+    <main>
+      <h1>Administrator login required</h1>
+      <a href="/login">Go to Login</a>
+    </main>
+  );
+}
   return (
     <main style={{
       minHeight: "100vh",
