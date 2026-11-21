@@ -133,7 +133,7 @@ export default function AddProductPage() {
             Set Name
             <input
               style={inputStyle}
-              Value={cardSet}
+              value={cardSet}
               onChange={e => setSetName(e.target.value)}
               placeholder="e.g. Base Set"
               required
