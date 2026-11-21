@@ -18,10 +18,33 @@ export default function AdminPage() {
         return;
       }
 
-      // Temporary access check. A server-side admin
-      // authorization check is still required.
-      setAuthorized(true);
-      setLoading(false);
+      const { data: sessionData, error: sessionError } =
+  await supabase.auth.getSession();
+
+if (sessionError || !sessionData.session) {
+  router.replace("/login");
+  return;
+}
+
+try {
+  const response = await fetch("/api/admin/check", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    router.replace("/login");
+    return;
+  }
+
+  setAuthorized(true);
+  setLoading(false);
+} catch {
+  router.replace("/login");
+}
     }
 
     checkAccess();
