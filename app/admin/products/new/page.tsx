@@ -6,7 +6,7 @@ import { supabase } from "../../../../lib/supabase-browser";
 export default function AddProductPage() {
   const [name, setName] = useState("");
   const [game, setGame] = useState("Pokémon");
-  const [setName, setSetName] = useState("");
+  const [cardSet, setSetName] = useState("");
   const [cardNumber, setCardNumber] = useState("");
   const [rarity, setRarity] = useState("");
   const [condition, setCondition] = useState("Near Mint");
@@ -38,7 +38,7 @@ export default function AddProductPage() {
         body: JSON.stringify({
           name,
           game,
-          set_name: setName,
+          set_name: cardset,
           card_number: cardNumber,
           rarity,
           condition,
@@ -133,7 +133,7 @@ export default function AddProductPage() {
             Set Name
             <input
               style={inputStyle}
-              value={setName}
+              Value={cardSet}]
               onChange={e => setSetName(e.target.value)}
               placeholder="e.g. Base Set"
               required
