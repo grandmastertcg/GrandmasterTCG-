@@ -38,7 +38,7 @@ export default function AddProductPage() {
         body: JSON.stringify({
           name,
           game,
-          set_name: cardset,
+          set_name: cardSet,
           card_number: cardNumber,
           rarity,
           condition,
