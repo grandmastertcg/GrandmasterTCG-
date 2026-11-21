@@ -72,7 +72,22 @@ try {
       <p>Welcome to your trading card shop.</p>
 
       <h2>Products</h2>
-      <p>Product management coming soon.</p>
+<a
+  href="/admin/products/new"
+  style={{
+    display: "inline-block",
+    background: "#f4c95d",
+    color: "#111",
+    padding: "14px 24px",
+    borderRadius: 8,
+    textDecoration: "none",
+    fontWeight: "bold",
+    marginTop: 12,
+    marginBottom: 20,
+  }}
+>
+  + Add New Trading Card
+</a>
 
       <h2>Orders</h2>
       <p>Order management coming soon.</p>
