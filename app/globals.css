@@ -167,6 +167,31 @@ img.mk-face { background: #edf1f5; }
   .mk-mobile-meta { display: block; color: var(--green); font-weight: 800; }
 }
 
+.desk { min-height: 100vh; background: #101820; color: #f4f7fb; padding: 32px 20px 64px; }
+.desk-head, .desk-table article { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
+.desk-head { width: min(980px, 100%); margin: 0 auto 18px; }
+.desk-kicker { margin: 0; color: #d7b15a; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; font-size: 12px; }
+.desk h1 { margin: 4px 0; font: 700 40px/1 "Space Grotesk", sans-serif; }
+.desk-head p, .desk-table span, .desk-empty { color: #b7c3d4; }
+.desk-head button { background: #f3d48a; color: #1b1406; border: 0; border-radius: 10px; padding: 12px 16px; font-weight: 800; }
+.desk-head button:disabled { opacity: 0.6; }
+.desk-stats, .desk-table, .desk-empty, .desk-error { width: min(980px, 100%); margin: 0 auto; }
+.desk-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.desk-stats div { background: #182433; border: 1px solid #2c3c50; border-radius: 14px; padding: 16px; }
+.desk-stats span { display: block; color: #b7c3d4; font-size: 13px; font-weight: 700; }
+.desk-stats strong { font: 700 28px/1.2 "Space Grotesk", sans-serif; }
+.desk-table { display: grid; gap: 10px; }
+.desk-table article { background: #182433; border: 1px solid #2c3c50; border-radius: 14px; padding: 16px; }
+.desk-table div, .desk-table ul { min-width: 0; }
+.desk-table strong, .desk-table span { display: block; }
+.desk-table ul { margin: 0; padding-left: 18px; flex: 1; }
+.desk-table b { font: 700 20px/1 "Space Grotesk", sans-serif; color: #f3d48a; white-space: nowrap; }
+.desk-empty, .desk-error { padding: 18px; border-radius: 14px; background: #182433; }
+.desk-error { color: #ffb4a8; }
+@media (max-width: 720px) {
+  .desk-head, .desk-table article, .desk-stats { display: grid; grid-template-columns: 1fr; }
+}
+
 @media (max-width: 720px) {
   .mk-nav { flex-wrap: wrap; padding: 10px 0; }
   .mk-search { order: 3; flex-basis: 100%; }
