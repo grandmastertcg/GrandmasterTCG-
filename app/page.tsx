@@ -1,30 +1,456 @@
- "use client";
-import { useEffect, useMemo, useState } from "react";
+"use client";
 
-type Product = { id:string; name:string; game:string; set_name:string|null; condition:string; price_pence:number; image_url:string|null; stock:number; };
-const demo: Product[] = [
- {id:"demo-1",name:"Charizard ex",game:"Pokémon",set_name:"Obsidian Flames",condition:"Near Mint",price_pence:2499,image_url:null,stock:1},
- {id:"demo-2",name:"Pikachu",game:"Pokémon",set_name:"Paldea Evolved",condition:"Near Mint",price_pence:350,image_url:null,stock:4},
- {id:"demo-3",name:"Blue-Eyes White Dragon",game:"Yu-Gi-Oh!",set_name:"Legend of Blue Eyes",condition:"Excellent",price_pence:899,image_url:null,stock:1},
- {id:"demo-4",name:"Monkey D. Luffy",game:"One Piece",set_name:"Awakening of the New Era",condition:"Near Mint",price_pence:649,image_url:null,stock:2},
- {id:"demo-5",name:"Gengar",game:"Pokémon",set_name:"Lost Origin",condition:"Excellent",price_pence:899,image_url:null,stock:1},
- {id:"demo-6",name:"Mewtwo VSTAR",game:"Pokémon",set_name:"Pokémon GO",condition:"Near Mint",price_pence:649,image_url:null,stock:3},
- {id:"demo-7",name:"Eevee",game:"Pokémon",set_name:"151",condition:"Near Mint",price_pence:225,image_url:null,stock:5},
- {id:"demo-8",name:"Roronoa Zoro",game:"One Piece",set_name:"Paramount War",condition:"Near Mint",price_pence:525,image_url:null,stock:2}
-];
-const gbp=(p:number)=>new Intl.NumberFormat("en-GB",{style:"currency",currency:"GBP"}).format(p/100);
-export default function Home(){
- const [products,setProducts]=useState<Product[]>(demo),[q,setQ]=useState(""),[game,setGame]=useState("All games"),[cart,setCart]=useState<Record<string,number>>({}),[busy,setBusy]=useState(false),[notice,setNotice]=useState("");
- useEffect(()=>{fetch("/api/products").then(r=>r.ok?r.json():null).then(d=>{if(d?.products)setProducts(d.products)}).catch(()=>{});},[]);
- const visible=useMemo(()=>products.filter(p=>(p.name+" "+(p.set_name||"")).toLowerCase().includes(q.toLowerCase())&&(game==="All games"||p.game===game)&&p.stock>0),[products,q,game]);
- const count=Object.values(cart).reduce((a,b)=>a+b,0);
- const total=products.reduce((s,p)=>s+(cart[p.id]||0)*p.price_pence,0);
- function add(p:Product){setCart(c=>({...c,[p.id]:Math.min((c[p.id]||0)+1,p.stock)}));setNotice(p.name+" added to basket");}
- async function checkout(){setBusy(true);setNotice("");try{const items=Object.entries(cart).filter(([,qty])=>qty>0).map(([product_id,quantity])=>({product_id,quantity}));const r=await fetch("/api/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Checkout could not be started.");if(d.url)window.location.href=d.url;else throw new Error("Payment service is not configured yet.");}catch(e){setNotice(e instanceof Error?e.message:"Checkout error");}finally{setBusy(false)}}
- return <><header className="topbar"><div className="shell nav"><a className="logo" href="#"><span className="logoMark">G</span>GRANDMASTER<b>TCG</b></a><div className="navlinks"><a href="#singles">Shop singles</a><a href="#about">About</a><button className="cart" onClick={()=>document.getElementById("basket")?.scrollIntoView({behavior:"smooth"})}>Basket ({count})</button></div></div></header>
- <main><section className="hero"><div className="shell"><div className="eyebrow">Your collection starts here</div><h1>Find the cards<br/>you’re chasing.</h1><p>Shop individual trading cards across Pokémon, Yu-Gi-Oh!, One Piece and more. Discover your next favourite addition at GrandmasterTCG.</p><a className="cta" href="#singles">Explore singles</a><div className="trust"><span>✓ Single-card listings</span><span>✓ Condition shown clearly</span><span>✓ UK delivery</span></div></div></section>
- <section className="section" id="singles"><div className="shell"><div className="sectionHead"><div><h2>Shop trading card singles</h2><p className="muted">Find cards by name, game or set.</p></div></div><div className="filters"><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search cards or sets…"/><select value={game} onChange={e=>setGame(e.target.value)}><option>All games</option><option>Pokémon</option><option>Yu-Gi-Oh!</option><option>One Piece</option><option>Magic: The Gathering</option><option>Lorcana</option></select></div><div className="grid">{visible.length?visible.map(p=><article className="product" key={p.id}><div className="art">{p.image_url?<img src={p.image_url} alt={p.name}/>:<div className="cardPlaceholder">SINGLE CARD<br/><small>{p.name}</small></div>}</div><div className="productInfo"><span className="pill">{p.game}</span><div className="productName">{p.name}</div><div className="details">{p.set_name||"Set not specified"} · {p.condition}</div><div className="productBottom"><span className="price">{gbp(p.price_pence)}</span><button className="add" onClick={()=>add(p)}>Add</button></div></div></article>):<div className="empty">No matching cards are currently in stock.</div>}</div></div></section>
- <section className="about" id="about"><div className="shell"><h2>Collect what you love.</h2><p>GrandmasterTCG is an independent trading card store for collectors. Listings should include accurate card details, condition and photographs so you can shop with confidence.</p></div></section>
- <section className="section" id="basket"><div className="shell"><h2>Your basket</h2>{count===0?<p className="muted">Your basket is empty. Add a card to get started.</p>:<><p>{count} item(s) · <strong>{gbp(total)}</strong></p><button className="cart" disabled={busy} onClick={checkout}>{busy?"Starting checkout…":"Secure checkout"}</button></>}{notice&&<p className="muted" role="status">{notice}</p>}</div></section></main>
- <footer><div className="shell">© {new Date().getFullYear()} GrandmasterTCG. Independent trading card retailer. All trademarks belong to their respective owners.</div></footer></>;
+import { useEffect, useMemo, useState } from "react";
+import { CONDITIONS, GAMES, demoCatalog, gameHue, gbp, type Product } from "@/lib/catalog";
+
+type SortKey = "price-asc" | "price-desc" | "name" | "stock";
+
+export default function Home() {
+  const [products, setProducts] = useState<Product[]>(demoCatalog);
+  const [source, setSource] = useState<"sample" | "live">("sample");
+  const [q, setQ] = useState("");
+  const [game, setGame] = useState<string>("All games");
+  const [condition, setCondition] = useState<string>("Any condition");
+  const [rarity, setRarity] = useState("Any rarity");
+  const [maxPounds, setMaxPounds] = useState("");
+  const [sort, setSort] = useState<SortKey>("price-asc");
+  const [view, setView] = useState<"list" | "grid">("list");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [cart, setCart] = useState<Record<string, number>>({});
+  const [basketOpen, setBasketOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("checkout") === "success") setNotice("Payment received. A confirmation will follow by email.");
+    if (params.get("checkout") === "cancelled") setNotice("Checkout was cancelled. Your basket is unchanged.");
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/products")
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = await response.json();
+        if (Array.isArray(data.products)) {
+          setProducts(data.products);
+          setSource("live");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSelectedId(null);
+        setBasketOpen(false);
+        setFiltersOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const rarities = useMemo(() => {
+    const values = new Set(products.map((product) => product.rarity).filter((value): value is string => Boolean(value)));
+    return ["Any rarity", ...Array.from(values).sort()];
+  }, [products]);
+
+  const visible = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    const maxPence = maxPounds.trim() === "" || Number.isNaN(Number(maxPounds))
+      ? Infinity
+      : Math.round(Number(maxPounds) * 100);
+
+    const list = products.filter((product) => {
+      if (product.stock <= 0) return false;
+      if (game !== "All games" && product.game !== game) return false;
+      if (condition !== "Any condition" && product.condition !== condition) return false;
+      if (rarity !== "Any rarity" && (product.rarity || "Unspecified") !== rarity) return false;
+      if (product.price_pence > maxPence) return false;
+      if (!query) return true;
+      const haystack = [product.name, product.set_name, product.card_number, product.rarity, product.game, product.finish]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+
+    return list.sort((a, b) => {
+      if (sort === "price-desc") return b.price_pence - a.price_pence;
+      if (sort === "name") return a.name.localeCompare(b.name) || a.price_pence - b.price_pence;
+      if (sort === "stock") return b.stock - a.stock;
+      return a.price_pence - b.price_pence;
+    });
+  }, [products, q, game, condition, rarity, maxPounds, sort]);
+
+  const selected = products.find((product) => product.id === selectedId) ?? null;
+  const copies = selected
+    ? products
+        .filter((product) => product.stock > 0 && product.name === selected.name && product.game === selected.game)
+        .sort((a, b) => a.price_pence - b.price_pence)
+    : [];
+
+  const count = Object.values(cart).reduce((sum, qty) => sum + qty, 0);
+  const total = products.reduce((sum, product) => sum + (cart[product.id] || 0) * product.price_pence, 0);
+  const cheapest = visible.length ? Math.min(...visible.map((product) => product.price_pence)) : 0;
+  const picks = products
+    .filter((product) => product.stock > 0 && product.price_pence <= 500 && (game === "All games" || product.game === game))
+    .sort((a, b) => a.price_pence - b.price_pence)
+    .slice(0, 4);
+
+  function otherCopies(product: Product) {
+    return products.filter((item) => item.id !== product.id && item.stock > 0 && item.name === product.name && item.game === product.game).length;
+  }
+
+  function add(product: Product) {
+    setCart((current) => ({
+      ...current,
+      [product.id]: Math.min((current[product.id] || 0) + 1, product.stock)
+    }));
+    setNotice(`${product.name} added to basket`);
+  }
+
+  function setQty(product: Product, quantity: number) {
+    setCart((current) => {
+      const next = { ...current };
+      if (quantity <= 0) delete next[product.id];
+      else next[product.id] = Math.min(quantity, product.stock);
+      return next;
+    });
+  }
+
+  function resetFilters() {
+    setQ("");
+    setGame("All games");
+    setCondition("Any condition");
+    setRarity("Any rarity");
+    setMaxPounds("");
+    setSort("price-asc");
+  }
+
+  async function checkout() {
+    setBusy(true);
+    setNotice("");
+    try {
+      const items = Object.entries(cart)
+        .filter(([, quantity]) => quantity > 0)
+        .map(([product_id, quantity]) => ({ product_id, quantity }));
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Checkout could not be started.");
+      if (data.url) window.location.href = data.url;
+      else throw new Error("Payment service is not configured yet.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Checkout error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="market">
+      <header className="mk-top">
+        <div className="mk-shell mk-nav">
+          <a className="mk-logo" href="/">
+            <span>G</span>
+            Grandmaster<b>TCG</b>
+          </a>
+          <label className="mk-search">
+            <span className="sr">Search the market</span>
+            <input
+              value={q}
+              onChange={(event) => setQ(event.target.value)}
+              placeholder="Search cards, sets or collector numbers"
+            />
+          </label>
+          <div className="mk-nav-actions">
+            <a href="/login">Sell / admin</a>
+            <button className="mk-basket-btn" onClick={() => { setBasketOpen(true); setSelectedId(null); }}>
+              Basket
+              <strong>{count}</strong>
+            </button>
+          </div>
+        </div>
+        <div className="mk-shell mk-games" role="tablist" aria-label="Games">
+          {GAMES.map((item) => (
+            <button
+              key={item}
+              role="tab"
+              aria-selected={game === item}
+              className={game === item ? "is-on" : ""}
+              onClick={() => setGame(item)}
+            >
+              {item === "Magic: The Gathering" ? "Magic" : item}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <main className="mk-shell mk-main">
+        {source === "sample" && (
+          <p className="mk-banner">Sample market data is on display. Live stock from your catalogue replaces it automatically, and sample cards cannot be purchased.</p>
+        )}
+        {notice && <p className="mk-notice" role="status">{notice}</p>}
+
+        <section className="mk-hero">
+          <div>
+            <p className="mk-kicker">UK singles desk</p>
+            <h1>Every listing priced. Every condition visible.</h1>
+            <p>Search the way a card market should work: one row per copy, with set, number, finish and the price you actually pay. GrandmasterTCG is a single UK shop, so you are not sorting through dozens of sellers.</p>
+          </div>
+          <dl className="mk-stats">
+            <div><dt>Listings</dt><dd>{products.filter((product) => product.stock > 0).length}</dd></div>
+            <div><dt>Showing</dt><dd>{visible.length}</dd></div>
+            <div><dt>From</dt><dd>{visible.length ? gbp(cheapest) : "—"}</dd></div>
+          </dl>
+        </section>
+
+        {!q && picks.length > 0 && (
+          <section className="mk-picks" aria-label="Low price picks">
+            <h2>Under £5</h2>
+            <div>
+              {picks.map((product) => (
+                <button key={product.id} onClick={() => setSelectedId(product.id)}>
+                  <CardFace product={product} />
+                  <span>
+                    <strong>{product.name}</strong>
+                    <em>{product.condition}</em>
+                  </span>
+                  <b>{gbp(product.price_pence)}</b>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <div className="mk-layout">
+          <aside className={filtersOpen ? "mk-filters is-open" : "mk-filters"}>
+            <div className="mk-filter-head">
+              <h2>Filters</h2>
+              <button onClick={resetFilters}>Reset</button>
+            </div>
+            <label>
+              Condition
+              <select value={condition} onChange={(event) => setCondition(event.target.value)}>
+                {CONDITIONS.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              Rarity
+              <select value={rarity} onChange={(event) => setRarity(event.target.value)}>
+                {rarities.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              Max price (£)
+              <input
+                inputMode="decimal"
+                value={maxPounds}
+                placeholder="Any"
+                onChange={(event) => setMaxPounds(event.target.value)}
+              />
+            </label>
+            <ul className="mk-promise">
+              <li>Condition written in full, not a code</li>
+              <li>Price is the price. No seller fees to decode</li>
+              <li>UK delivery at checkout</li>
+            </ul>
+          </aside>
+
+          <section className="mk-results" id="market">
+            <div className="mk-toolbar">
+              <div>
+                <h2>{game === "All games" ? "All singles" : game}</h2>
+                <p>{visible.length} listing{visible.length === 1 ? "" : "s"}</p>
+              </div>
+              <div className="mk-toolbar-actions">
+                <button className="mk-text-btn" onClick={() => setFiltersOpen((open) => !open)}>
+                  {filtersOpen ? "Hide filters" : "Filters"}
+                </button>
+                <label>
+                  <span className="sr">Sort</span>
+                  <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
+                    <option value="price-asc">Price: low to high</option>
+                    <option value="price-desc">Price: high to low</option>
+                    <option value="name">Name</option>
+                    <option value="stock">Most in stock</option>
+                  </select>
+                </label>
+                <div className="mk-view" role="group" aria-label="Layout">
+                  <button className={view === "list" ? "is-on" : ""} onClick={() => setView("list")}>List</button>
+                  <button className={view === "grid" ? "is-on" : ""} onClick={() => setView("grid")}>Cards</button>
+                </div>
+              </div>
+            </div>
+
+            {visible.length === 0 ? (
+              <div className="mk-empty">
+                <p>No listings match those filters.</p>
+                <button onClick={resetFilters}>Clear filters</button>
+              </div>
+            ) : view === "list" ? (
+              <div className="mk-table" role="table">
+                <div className="mk-row mk-head" role="row">
+                  <span>Card</span><span>Set</span><span>Condition</span><span>Stock</span><span>Price</span><span />
+                </div>
+                {visible.map((product) => (
+                  <article
+                    key={product.id}
+                    className={selectedId === product.id ? "mk-row is-on" : "mk-row"}
+                    tabIndex={0}
+                    onClick={() => { setSelectedId(product.id); setBasketOpen(false); }}
+                    onKeyDown={(event) => { if (event.key === "Enter") { setSelectedId(product.id); setBasketOpen(false); } }}
+                  >
+                    <div className="mk-identity">
+                      <CardFace product={product} />
+                      <div>
+                        <strong>{product.name}</strong>
+                        <small className="mk-sub">{[product.rarity, product.finish, product.language].filter(Boolean).join(" · ") || product.game}</small>
+                        <small className="mk-mobile-meta">{product.condition}</small>
+                        {otherCopies(product) > 0 && <em>{otherCopies(product)} other {otherCopies(product) === 1 ? "copy" : "copies"}</em>}
+                      </div>
+                    </div>
+                    <div className="mk-set">
+                      <span>{product.set_name || "Set not listed"}</span>
+                      <small>{product.card_number || product.game}</small>
+                    </div>
+                    <div className={`mk-cond cond-${product.condition.split(" ")[0].toLowerCase()}`}>{product.condition}</div>
+                    <div>{product.stock === 1 ? "1 left" : `${product.stock} in stock`}</div>
+                    <div className="mk-price">{gbp(product.price_pence)}</div>
+                    <button
+                      className="mk-add"
+                      onClick={(event) => { event.stopPropagation(); add(product); }}
+                    >
+                      Add
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="mk-grid">
+                {visible.map((product) => (
+                  <article key={product.id} className="mk-card" tabIndex={0} onClick={() => setSelectedId(product.id)} onKeyDown={(event) => { if (event.key === "Enter") setSelectedId(product.id); }}>
+                    <CardFace product={product} large />
+                    <p className="mk-game">{product.game}</p>
+                    <h3>{product.name}</h3>
+                    <p>{product.set_name || "Set not listed"} · {product.condition}</p>
+                    <div>
+                      <strong>{gbp(product.price_pence)}</strong>
+                      <button className="mk-add" onClick={(event) => { event.stopPropagation(); add(product); }}>Add</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        <section className="mk-steps">
+          <h2>How buying works</h2>
+          <ol>
+            <li><strong>Search the card.</strong> Filter by game, condition, rarity and the most you want to pay.</li>
+            <li><strong>Read the copy.</strong> Each row is one listing, so a played copy never hides behind a near mint price.</li>
+            <li><strong>Check out in GBP.</strong> Stripe takes payment and collects a UK shipping address.</li>
+          </ol>
+        </section>
+      </main>
+
+      <footer className="mk-foot">
+        <div className="mk-shell">
+          <strong>GrandmasterTCG</strong>
+          <span>Independent UK trading-card retailer. Game names and card names are trademarks of their owners.</span>
+          <span>© {new Date().getFullYear()}</span>
+        </div>
+      </footer>
+
+      {selected && (
+        <div className="mk-scrim" onClick={() => setSelectedId(null)}>
+          <aside className="mk-drawer" onClick={(event) => event.stopPropagation()} role="dialog" aria-label={selected.name}>
+            <button className="mk-close" onClick={() => setSelectedId(null)}>Close</button>
+            <CardFace product={selected} large />
+            <p className="mk-game">{selected.game}</p>
+            <h2>{selected.name}</h2>
+            <p className="mk-meta">
+              {[selected.set_name, selected.card_number, selected.rarity, selected.finish, selected.language].filter(Boolean).join(" · ")}
+            </p>
+            {selected.description && <p>{selected.description}</p>}
+            <div className="mk-offer">
+              <div>
+                <span>{selected.condition}</span>
+                <strong>{gbp(selected.price_pence)}</strong>
+                <small>{selected.stock === 1 ? "Only 1 in stock" : `${selected.stock} available`}</small>
+              </div>
+              <button className="mk-add" onClick={() => add(selected)}>Add to basket</button>
+            </div>
+            {copies.length > 1 && (
+              <div className="mk-copies">
+                <h3>All copies of this card</h3>
+                {copies.map((copy) => (
+                  <button key={copy.id} className={copy.id === selected.id ? "is-on" : ""} onClick={() => setSelectedId(copy.id)}>
+                    <span>{copy.condition}</span>
+                    <span>{copy.stock} in stock</span>
+                    <b>{gbp(copy.price_pence)}</b>
+                  </button>
+                ))}
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
+
+      {basketOpen && (
+        <div className="mk-scrim" onClick={() => setBasketOpen(false)}>
+          <aside className="mk-drawer mk-basket" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Basket">
+            <button className="mk-close" onClick={() => setBasketOpen(false)}>Close</button>
+            <h2>Basket</h2>
+            {count === 0 ? (
+              <p>Your basket is empty. Add a listing to get started.</p>
+            ) : (
+              <>
+                <ul>
+                  {products.filter((product) => cart[product.id]).map((product) => (
+                    <li key={product.id}>
+                      <div>
+                        <strong>{product.name}</strong>
+                        <small>{product.condition} · {gbp(product.price_pence)}</small>
+                      </div>
+                      <div className="mk-qty">
+                        <button onClick={() => setQty(product, (cart[product.id] || 0) - 1)} aria-label={`Remove one ${product.name}`}>−</button>
+                        <span>{cart[product.id]}</span>
+                        <button onClick={() => setQty(product, (cart[product.id] || 0) + 1)} aria-label={`Add another ${product.name}`}>+</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mk-total"><span>{count} item{count === 1 ? "" : "s"}</span><strong>{gbp(total)}</strong></p>
+                <button className="mk-checkout" disabled={busy} onClick={checkout}>
+                  {busy ? "Starting checkout…" : "Secure checkout"}
+                </button>
+                <p className="mk-fine">UK shipping address collected by Stripe. Sample listings are blocked until real stock is in the catalogue.</p>
+              </>
+            )}
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardFace({ product, large = false }: { product: Product; large?: boolean }) {
+  if (product.image_url) {
+    return <img className={large ? "mk-face is-large" : "mk-face"} src={product.image_url} alt="" />;
+  }
+  return (
+    <span className={`mk-face is-${gameHue(product.game)}${large ? " is-large" : ""}`} aria-hidden>
+      <i>{product.game.slice(0, 2)}</i>
+      <b>{product.card_number || "Single"}</b>
+    </span>
+  );
 }

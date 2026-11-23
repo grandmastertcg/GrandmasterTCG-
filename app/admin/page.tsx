@@ -51,7 +51,7 @@ try {
   }, [router]);
 
   if (loading) {
-    return <main>Checking login...</main>;
+    return <main style={{ minHeight: "100vh", background: "#090d18", color: "#f5f7fb", padding: 40 }}>Checking login...</main>;
   }
 
   if (!authorized) {

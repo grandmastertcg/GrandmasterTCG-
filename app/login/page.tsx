@@ -58,7 +58,7 @@ export default function LoginPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          style={{ padding: 12 }}
+          style={{ padding: 12, background: "#1a2740", color: "#f5f7fb", border: "1px solid #2a3853", borderRadius: 8 }}
         />
 
         <input
@@ -67,7 +67,7 @@ export default function LoginPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          style={{ padding: 12 }}
+          style={{ padding: 12, background: "#1a2740", color: "#f5f7fb", border: "1px solid #2a3853", borderRadius: 8 }}
         />
 
         <button

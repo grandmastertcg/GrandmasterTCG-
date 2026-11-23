@@ -1,9 +1,14 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GrandmasterTCG | Trading Card Singles",
-  description: "Shop Pokémon, Yu-Gi-Oh!, One Piece and more trading card singles at GrandmasterTCG."
+  title: "GrandmasterTCG | UK Trading Card Market",
+  description: "Search Pokémon, Magic, Yu-Gi-Oh!, One Piece and Lorcana singles. Compare condition and price, then check out in pounds."
+};
+
+export const viewport: Viewport = {
+  themeColor: "#102033",
+  colorScheme: "light"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -5,7 +5,7 @@ export async function GET() {
   try {
     const { data, error } = await supabaseAdmin()
       .from("products")
-      .select("id,name,game,set_name,condition,price_pence,image_url,stock")
+      .select("id,name,game,set_name,card_number,rarity,condition,price_pence,image_url,stock,description")
       .eq("active", true)
       .gt("stock", 0)
       .order("created_at", { ascending: false });

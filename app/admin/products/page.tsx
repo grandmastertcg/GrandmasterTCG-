@@ -272,12 +272,12 @@ export default function ManageProductsPage() {
   }
 
   if (access === "checking") {
-    return <main>Checking administrator access...</main>;
+    return <main style={{ minHeight: "100vh", background: "#090d18", color: "#f5f7fb", padding: 40 }}>Checking administrator access...</main>;
   }
 
   if (access === "denied") {
     return (
-      <main>
+      <main style={{ minHeight: "100vh", background: "#090d18", color: "#f5f7fb", padding: 40 }}>
         <h1>Administrator login required</h1>
         <a href="/login">Go to Login</a>
       </main>
