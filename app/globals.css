@@ -192,10 +192,33 @@ img.mk-face { background: #edf1f5; }
   .desk-head, .desk-table article, .desk-stats { display: grid; grid-template-columns: 1fr; }
 }
 
+.mk-account { color: white; text-decoration: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.join { min-height: 100vh; background: var(--paper); color: var(--ink); }
+.join-card { width: min(440px, calc(100% - 32px)); margin: 48px auto; background: white; border: 1px solid var(--line); border-radius: 16px; padding: 28px; }
+.join h1 { margin: 8px 0; font: 700 36px/1 "Space Grotesk", sans-serif; }
+.join p { color: var(--muted); }
+.join form, .sell-form { display: grid; gap: 12px; }
+.join label, .sell-form label { display: grid; gap: 6px; font-size: 13px; font-weight: 800; color: var(--muted); }
+.join input, .join select, .sell-form input, .sell-form select { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: white; color: var(--ink); }
+.join button, .sell-form button, .account-top button { background: var(--navy); color: white; border: 0; border-radius: 10px; padding: 12px 14px; font-weight: 800; }
+.join .text-btn { background: transparent; color: var(--gold); padding: 0; }
+.join a, .account a { color: var(--gold); font-weight: 800; }
+.account { width: min(880px, calc(100% - 32px)); margin: 28px auto 64px; }
+.account-top { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.account-top div:last-child { display: flex; gap: 16px; align-items: center; }
+.account h1 { margin: 0; font: 700 36px/1 "Space Grotesk", sans-serif; }
+.account-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+.account-panel { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+.account-panel h2 { margin: 0 0 12px; font: 700 20px "Space Grotesk", sans-serif; }
+.my-listing { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.my-listing span { display: block; color: var(--muted); font-size: 13px; }
+.my-listing button { background: transparent; color: #8d3b32; padding: 0; }
+.join-error { color: #8d3b32; }
+@media (max-width: 800px) { .account-grid, .account-top { display: grid; grid-template-columns: 1fr; } }
+
 @media (max-width: 720px) {
   .mk-nav { flex-wrap: wrap; padding: 10px 0; }
   .mk-search { order: 3; flex-basis: 100%; }
-  .mk-nav-actions a { display: none; }
   .mk-hero, .mk-picks > div, .mk-steps ol, .mk-grid, .mk-stats { grid-template-columns: 1fr; }
   .mk-foot .mk-shell { flex-direction: column; }
   .mk-toolbar { align-items: stretch; flex-direction: column; }

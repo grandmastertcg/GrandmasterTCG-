@@ -3,16 +3,16 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET() {
   try {
-    const { data, error } = await supabaseAdmin()
-      .from("products")
-      .select("id,name,game,set_name,card_number,rarity,condition,price_pence,image_url,stock,description")
-      .eq("active", true)
-      .gt("stock", 0)
-      .order("created_at", { ascending: false });
+    const db = supabaseAdmin();
+    const withSeller = await db.from("products").select("id,name,game,set_name,card_number,rarity,condition,price_pence,image_url,stock,description,seller_name").eq("active", true).gt("stock", 0).order("created_at", { ascending: false });
+    if (withSeller.error && /seller_name/.test(withSeller.error.message)) {
+      const fallback = await db.from("products").select("id,name,game,set_name,card_number,rarity,condition,price_pence,image_url,stock,description").eq("active", true).gt("stock", 0).order("created_at", { ascending: false });
+      if (fallback.error) throw fallback.error;
+      return NextResponse.json({ products: fallback.data ?? [] });
+    }
+    if (withSeller.error) throw withSeller.error;
 
-    if (error) throw error;
-
-    return NextResponse.json({ products: data ?? [] });
+    return NextResponse.json({ products: withSeller.data ?? [] });
   } catch (error) {
     console.error("SUPABASE PRODUCTS ERROR:", error);
 

@@ -12,7 +12,11 @@ export type Product = {
   description?: string | null;
   language?: string | null;
   finish?: string | null;
+  seller_name?: string | null;
 };
+
+export const SALE_GAMES = ["Pokémon", "Magic: The Gathering", "Yu-Gi-Oh!", "One Piece", "Lorcana", "Other"] as const;
+export const SALE_CONDITIONS = ["Near Mint", "Excellent", "Good", "Played", "Poor"] as const;
 
 export const GAMES = [
   "All games",

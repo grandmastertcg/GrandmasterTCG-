@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { supabase } from "../../lib/supabase-browser";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase-browser";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,24 +11,24 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function login(e: React.FormEvent) {
-    e.preventDefault();
+  async function login(event: FormEvent) {
+    event.preventDefault();
     setLoading(true);
     setMessage("");
-
     try {
-      
-
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         setMessage(error.message);
-      } else {
-        router.push("/admin");
+        return;
       }
+      const token = data.session?.access_token;
+      if (!token) {
+        setMessage("Check your email to confirm this account, then sign in.");
+        return;
+      }
+      const access = await fetch("/api/admin/check", { headers: { Authorization: `Bearer ${token}` } });
+      const body = access.ok ? await access.json() : { admin: false };
+      router.push(body.admin ? "/admin" : "/account");
     } catch {
       setMessage("Login failed. Check your configuration.");
     } finally {
@@ -36,55 +36,40 @@ export default function LoginPage() {
     }
   }
 
+  async function forgot() {
+    if (!email) {
+      setMessage("Enter your email address first.");
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`
+    });
+    setMessage(error ? error.message : "Password reset email sent.");
+    setLoading(false);
+  }
+
   return (
-    <main style={{
-      minHeight: "100vh",
-      background: "#111",
-      color: "#f4c95d",
-      padding: "60px 20px",
-      textAlign: "center"
-    }}>
-      <h1>GrandmasterTCG Admin Login</h1>
-
-      <form onSubmit={login} style={{
-        maxWidth: 350,
-        margin: "40px auto",
-        display: "grid",
-        gap: 15
-      }}>
-        <input
-          type="email"
-          placeholder="Email address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          style={{ padding: 12, background: "#1a2740", color: "#f5f7fb", border: "1px solid #2a3853", borderRadius: 8 }}
-        />
-
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          style={{ padding: 12, background: "#1a2740", color: "#f5f7fb", border: "1px solid #2a3853", borderRadius: 8 }}
-        />
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            padding: 14,
-            background: "#f4c95d",
-            color: "#111",
-            cursor: "pointer"
-          }}
-        >
-          {loading ? "Signing in..." : "Sign In"}
-        </button>
-
-        <p role="status">{message}</p>
-      </form>
+    <main className="join">
+      <section className="join-card">
+        <a href="/">GrandmasterTCG</a>
+        <h1>Sign in</h1>
+        <p>Buy from the market, or open your account to sell cards.</p>
+        <form onSubmit={login}>
+          <label>
+            Email
+            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          </label>
+          <label>
+            Password
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+          </label>
+          <button type="submit" disabled={loading}>{loading ? "Signing in..." : "Sign in"}</button>
+        </form>
+        {message && <p className="join-error" role="status">{message}</p>}
+        <p><button className="text-btn" type="button" onClick={forgot}>Forgot password</button></p>
+        <p>New here? <a href="/signup">Create an account</a></p>
+      </section>
     </main>
   );
 }

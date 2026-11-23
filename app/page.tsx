@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CONDITIONS, GAMES, demoCatalog, gameHue, gbp, type Product } from "@/lib/catalog";
+import { supabase } from "@/lib/supabase-browser";
 
 type SortKey = "price-asc" | "price-desc" | "name" | "stock";
 
@@ -21,11 +22,20 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [accountLabel, setAccountLabel] = useState("Sign in");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("checkout") === "success") setNotice("Payment received. A confirmation will follow by email.");
     if (params.get("checkout") === "cancelled") setNotice("Checkout was cancelled. Your basket is unchanged.");
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setAccountLabel(accountLabelFor(data.session?.user)));
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAccountLabel(accountLabelFor(session?.user));
+    });
+    return () => data.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -135,12 +145,17 @@ export default function Home() {
     setBusy(true);
     setNotice("");
     try {
+      const session = (await supabase.auth.getSession()).data.session;
+      if (!session) {
+        window.location.href = "/login";
+        return;
+      }
       const items = Object.entries(cart)
         .filter(([, quantity]) => quantity > 0)
         .map(([product_id, quantity]) => ({ product_id, quantity }));
       const response = await fetch("/api/checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ items })
       });
       const data = await response.json();
@@ -171,7 +186,7 @@ export default function Home() {
             />
           </label>
           <div className="mk-nav-actions">
-            <a href="/login">Sell / admin</a>
+            <a className="mk-account" href={accountLabel === "Sign in" ? "/login" : "/account"}>{accountLabel}</a>
             <button className="mk-basket-btn" onClick={() => { setBasketOpen(true); setSelectedId(null); }}>
               Basket
               <strong>{count}</strong>
@@ -203,7 +218,7 @@ export default function Home() {
           <div>
             <p className="mk-kicker">UK singles desk</p>
             <h1>Every listing priced. Every condition visible.</h1>
-            <p>Search the way a card market should work: one row per copy, with set, number, finish and the price you actually pay. GrandmasterTCG is a single UK shop, so you are not sorting through dozens of sellers.</p>
+            <p>Search one row per copy, with the condition, price and seller written out. Create a free account to buy from the market or list cards of your own.</p>
           </div>
           <dl className="mk-stats">
             <div><dt>Listings</dt><dd>{products.filter((product) => product.stock > 0).length}</dd></div>
@@ -313,6 +328,7 @@ export default function Home() {
                       <div>
                         <strong>{product.name}</strong>
                         <small className="mk-sub">{[product.rarity, product.finish, product.language].filter(Boolean).join(" · ") || product.game}</small>
+                        <small>Sold by {product.seller_name || "GrandmasterTCG"}</small>
                         <small className="mk-mobile-meta">{product.condition}</small>
                         {otherCopies(product) > 0 && <em>{otherCopies(product)} other {otherCopies(product) === 1 ? "copy" : "copies"}</em>}
                       </div>
@@ -380,6 +396,7 @@ export default function Home() {
             <p className="mk-meta">
               {[selected.set_name, selected.card_number, selected.rarity, selected.finish, selected.language].filter(Boolean).join(" · ")}
             </p>
+            <p className="mk-meta">Sold by {selected.seller_name || "GrandmasterTCG"}</p>
             {selected.description && <p>{selected.description}</p>}
             <div className="mk-offer">
               <div>
@@ -433,7 +450,7 @@ export default function Home() {
                 <button className="mk-checkout" disabled={busy} onClick={checkout}>
                   {busy ? "Starting checkout…" : "Secure checkout"}
                 </button>
-                <p className="mk-fine">UK shipping address collected by Stripe. Sample listings are blocked until real stock is in the catalogue.</p>
+                <p className="mk-fine">Sign in to check out. Stripe collects the UK shipping address. Sample listings cannot be purchased.</p>
               </>
             )}
           </aside>
@@ -441,6 +458,13 @@ export default function Home() {
       )}
     </div>
   );
+}
+
+function accountLabelFor(user?: { email?: string | null; user_metadata?: { display_name?: string } }) {
+  const name = user?.user_metadata?.display_name?.trim();
+  if (name) return name;
+  if (user?.email) return user.email.split("@")[0];
+  return "Sign in";
 }
 
 function CardFace({ product, large = false }: { product: Product; large?: boolean }) {

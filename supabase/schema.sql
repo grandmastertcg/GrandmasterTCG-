@@ -13,6 +13,8 @@ create table if not exists public.products (
   image_url text,
   description text,
   active boolean not null default true,
+  seller_id uuid,
+  seller_name text,
   created_at timestamptz not null default now()
 );
 

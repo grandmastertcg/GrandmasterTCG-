@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
+import { userFromRequest } from "@/lib/require-user";
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,16 +23,21 @@ export async function POST(req: NextRequest) {
       if (!p || !p.active || !Number.isInteger(qty) || qty < 1 || qty > p.stock) throw new Error("A card is no longer available in that quantity.");
       return { price_data: { currency: "gbp", product_data: { name: p.name }, unit_amount: p.price_pence }, quantity: qty };
     });
+    const buyer = await userFromRequest(req);
+    if (!buyer?.email) {
+      return NextResponse.json({ error: "Sign in before you check out." }, { status: 401 });
+    }
     const stripe = stripeClient();
     const base = process.env.NEXT_PUBLIC_SITE_URL;
     if (!base) throw new Error("Site URL is not configured.");
     const session = await stripe.checkout.sessions.create({
       mode: "payment", line_items,
+      customer_email: buyer.email,
       success_url: `${base}/?checkout=success`,
       cancel_url: `${base}/?checkout=cancelled`,
       billing_address_collection: "required",
       shipping_address_collection: { allowed_countries: ["GB"] },
-      metadata: { product_ids: ids.join(",") }
+      metadata: { product_ids: ids.join(","), buyer_id: buyer.id }
     });
     return NextResponse.json({ url: session.url });
   } catch (e) {
