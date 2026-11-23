@@ -12,6 +12,7 @@ type Transaction = {
   name: string | null;
   place: string;
   amountPence: number;
+  commissionPence: number | null;
   currency: string;
   items: { name: string; quantity: number }[];
 };
@@ -113,6 +114,7 @@ function TransactionsScreen({
   onRefresh: () => void;
 }) {
   const total = transactions.reduce((sum, transaction) => sum + transaction.amountPence, 0);
+  const commission = transactions.reduce((sum, transaction) => sum + (transaction.commissionPence ?? 0), 0);
 
   return (
     <main className="desk">
@@ -129,7 +131,8 @@ function TransactionsScreen({
 
       <section className="desk-stats">
         <div><span>Payments</span><strong>{transactions.length}</strong></div>
-        <div><span>Taken</span><strong>{gbp(total)}</strong></div>
+        <div><span>Paid</span><strong>{gbp(total)}</strong></div>
+        <div><span>Your 2% fee</span><strong>{gbp(commission)}</strong></div>
       </section>
 
       {error && <p className="desk-error" role="status">{error}</p>}
@@ -155,7 +158,10 @@ function TransactionsScreen({
                   ))
                 )}
               </ul>
-              <b>{transaction.currency === "gbp" ? gbp(transaction.amountPence) : `${(transaction.amountPence / 100).toFixed(2)} ${transaction.currency.toUpperCase()}`}</b>
+              <b>
+                {transaction.currency === "gbp" ? gbp(transaction.amountPence) : `${(transaction.amountPence / 100).toFixed(2)} ${transaction.currency.toUpperCase()}`}
+                {transaction.commissionPence != null && <small>Your fee {gbp(transaction.commissionPence)}</small>}
+              </b>
             </article>
           ))}
         </div>

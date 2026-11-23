@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { SALE_CONDITIONS, SALE_GAMES, gbp } from "@/lib/catalog";
+import { commissionOnSale } from "@/lib/commission";
 
 type Listing = {
   id: string;
@@ -100,7 +101,15 @@ export default function AccountPage() {
     await refresh(token);
   }
 
-  async function signOut() {
+  function priceSplit(price: string) {
+  if (!/^\d+(\.\d{1,2})?$/.test(price)) return null;
+  const [pounds, pennies = ""] = price.split(".");
+  const pence = Number(pounds) * 100 + Number(pennies.padEnd(2, "0"));
+  const fee = commissionOnSale(pence);
+  return { fee, net: pence - fee };
+}
+
+async function signOut() {
     await supabase.auth.signOut();
     router.push("/");
   }
@@ -113,7 +122,7 @@ export default function AccountPage() {
         <div>
           <a href="/">GrandmasterTCG</a>
           <h1>{label}</h1>
-          <p>Buy from the market, and sell cards under this name.</p>
+          <p>Buy from the market, and sell cards under this name. The shop keeps 2% of each sale, up to £100 per card.</p>
         </div>
         <div>
           {admin && <a href="/admin">Shop admin</a>}
@@ -140,6 +149,7 @@ export default function AccountPage() {
               </select>
             </label>
             <label>Price (£)<input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required /></label>
+            {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)}. The shop keeps {gbp(priceSplit(form.price)!.fee)}.</p>}
             <label>Quantity<input type="number" min={1} max={99} value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} required /></label>
             <button type="submit" disabled={saving}>{saving ? "Saving..." : "List this card"}</button>
           </form>
@@ -150,7 +160,7 @@ export default function AccountPage() {
             <article className="my-listing" key={listing.id}>
               <div>
                 <strong>{listing.name}</strong>
-                <span>{listing.game} · {listing.condition} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"}</span>
+                <span>{listing.game} · {listing.condition} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"} · you receive {gbp(listing.price_pence - commissionOnSale(listing.price_pence))}</span>
               </div>
               <div>
                 <b>{gbp(listing.price_pence)}</b>

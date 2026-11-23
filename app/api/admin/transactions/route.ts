@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
           name: session.shipping_details?.name ?? session.customer_details?.name ?? null,
           place,
           amountPence: session.amount_total ?? 0,
+          commissionPence: penceFrom(session.metadata?.commission_pence),
           currency: session.currency ?? "gbp",
           items: (session.line_items?.data ?? []).map((item) => ({
             name: item.description || "Card",
@@ -70,4 +71,8 @@ export async function GET(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Transactions could not be loaded.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+function penceFrom(value: string | undefined) {
+  return value != null && /^\d+$/.test(value) ? Number(value) : null;
 }

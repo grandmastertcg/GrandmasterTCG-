@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CONDITIONS, GAMES, demoCatalog, gameHue, gbp, type Product } from "@/lib/catalog";
+import { commissionForLine } from "@/lib/commission";
 import { supabase } from "@/lib/supabase-browser";
 
 type SortKey = "price-asc" | "price-desc" | "name" | "stock";
@@ -105,6 +106,7 @@ export default function Home() {
 
   const count = Object.values(cart).reduce((sum, qty) => sum + qty, 0);
   const total = products.reduce((sum, product) => sum + (cart[product.id] || 0) * product.price_pence, 0);
+  const fee = products.reduce((sum, product) => sum + commissionForLine(product.price_pence, cart[product.id] || 0), 0);
   const cheapest = visible.length ? Math.min(...visible.map((product) => product.price_pence)) : 0;
   const picks = products
     .filter((product) => product.stock > 0 && product.price_pence <= 500 && (game === "All games" || product.game === game))
@@ -447,6 +449,7 @@ export default function Home() {
                   ))}
                 </ul>
                 <p className="mk-total"><span>{count} item{count === 1 ? "" : "s"}</span><strong>{gbp(total)}</strong></p>
+                <p className="mk-fine">GrandmasterTCG keeps {gbp(fee)} from this sale. That is 2% of each card, and never more than £100 per card. Sellers receive {gbp(total - fee)}.</p>
                 <button className="mk-checkout" disabled={busy} onClick={checkout}>
                   {busy ? "Starting checkout…" : "Secure checkout"}
                 </button>
