@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
 import { userFromRequest } from "@/lib/require-user";
 import { commissionOnSale } from "@/lib/commission";
+import { createPendingOrder } from "@/lib/fulfillment";
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest) {
     }
     const db = supabaseAdmin();
     const { data: products, error } = await db.from("products")
-      .select("id,name,price_pence,stock,active").in("id", ids);
+      .select("id,name,price_pence,stock,active,seller_id,seller_name").in("id", ids);
     if (error || !products) throw error || new Error("Products unavailable");
     const line_items = body.items.map((item: { product_id?: string; quantity?: number }) => {
       const p = products.find(x => x.id === item.product_id);
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       mode: "payment", line_items,
       customer_email: buyer.email,
-      success_url: `${base}/?checkout=success`,
+      success_url: `${base}/account?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${base}/?checkout=cancelled`,
       billing_address_collection: "required",
       shipping_address_collection: { allowed_countries: ["GB"] },
@@ -49,6 +50,19 @@ export async function POST(req: NextRequest) {
         commission_pence: String(commissionPence),
         seller_proceeds_pence: String(salePence - commissionPence)
       }
+    });
+    const quantities = body.items.map((item: { product_id?: string; quantity?: number }) => ({
+      product_id: String(item.product_id),
+      quantity: Number(item.quantity)
+    }));
+    await createPendingOrder({
+      sessionId: session.id,
+      buyerId: buyer.id,
+      email: buyer.email,
+      products,
+      items: quantities,
+      commissionPence,
+      totalPence: salePence
     });
     return NextResponse.json({ url: session.url });
   } catch (e) {

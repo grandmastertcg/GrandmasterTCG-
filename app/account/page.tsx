@@ -5,7 +5,20 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { SALE_CONDITIONS, SALE_GAMES, gbp } from "@/lib/catalog";
 import { commissionOnSale } from "@/lib/commission";
+import { CARRIERS } from "@/lib/shipping";
 
+type Parcel = {
+  id: string;
+  sellerName: string;
+  shipTo?: string;
+  carrier: string | null;
+  trackingNumber: string | null;
+  receivedAt: string | null;
+  proceedsPence: number;
+  paid: boolean;
+  payoutError: string | null;
+  items: { name: string; quantity: number }[];
+};
 type Listing = {
   id: string;
   name: string;
@@ -23,6 +36,10 @@ export default function AccountPage() {
   const [label, setLabel] = useState("");
   const [admin, setAdmin] = useState(false);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [sales, setSales] = useState<Parcel[]>([]);
+  const [purchases, setPurchases] = useState<Parcel[]>([]);
+  const [payoutsConnected, setPayoutsConnected] = useState(false);
+  const [tracking, setTracking] = useState<Record<string, { carrier: string; number: string }>>({});
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -51,6 +68,14 @@ export default function AccountPage() {
         const body = await access.json();
         setAdmin(Boolean(body.admin));
       }
+      const sessionId = new URLSearchParams(window.location.search).get("session_id");
+      if (sessionId) {
+        await fetch("/api/checkout/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ sessionId })
+        });
+      }
       await refresh(session.access_token);
       setReady(true);
     });
@@ -64,6 +89,16 @@ export default function AccountPage() {
     const body = await response.json();
     if (response.ok) setListings(body.listings ?? []);
     else setMessage(body.error || "Listings could not be loaded.");
+    const parcels = await fetch("/api/account/shipments", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store"
+    });
+    const parcelBody = await parcels.json();
+    if (parcels.ok) {
+      setSales(parcelBody.sales ?? []);
+      setPurchases(parcelBody.purchases ?? []);
+      setPayoutsConnected(Boolean(parcelBody.payoutsConnected));
+    }
   }
 
   async function createListing(event: FormEvent) {
@@ -109,7 +144,35 @@ export default function AccountPage() {
   return { fee, net: pence - fee };
 }
 
-async function signOut() {
+async function parcelAction(id: string, action: "ship" | "receive", carrier?: string, trackingNumber?: string) {
+    const response = await fetch(`/api/account/shipments/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action, carrier, trackingNumber })
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      setMessage(body.error || "That parcel could not be updated.");
+      return;
+    }
+    setMessage(body.message || (action === "ship" ? "Tracking saved. The buyer can confirm delivery." : "Delivery confirmed."));
+    await refresh(token);
+  }
+
+  async function connectPayouts() {
+    const response = await fetch("/api/account/connect", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const body = await response.json();
+    if (!response.ok || !body.url) {
+      setMessage(body.error || "Stripe payouts could not be started.");
+      return;
+    }
+    window.location.href = body.url;
+  }
+
+  async function signOut() {
     await supabase.auth.signOut();
     router.push("/");
   }
@@ -130,6 +193,45 @@ async function signOut() {
         </div>
       </header>
       {message && <p className="join-error" role="status">{message}</p>}
+      <section className="account-panel parcel-panel">
+        <h2>Payouts and parcels</h2>
+        <p>Every sale must be posted with tracking. Stripe pays the seller only after the buyer confirms the parcel arrived. Your 2% fee stays with the shop.</p>
+        <button type="button" onClick={connectPayouts}>{payoutsConnected ? "Open Stripe payouts" : "Set up Stripe payouts"}</button>
+        <h3>Sales to post</h3>
+        {sales.length === 0 ? <p>No paid sales waiting.</p> : sales.map((parcel) => (
+          <article className="my-listing" key={parcel.id}>
+            <div>
+              <strong>{parcel.items.map((item) => `${item.quantity} × ${item.name}`).join(", ") || "Cards"}</strong>
+              {parcel.shipTo && <span>Ship to {parcel.shipTo}</span>}
+              <span>{parcel.receivedAt ? (parcel.paid ? "Buyer received it. Paid out." : "Buyer received it. Payout pending.") : parcel.trackingNumber ? `Posted by ${parcel.carrier}: ${parcel.trackingNumber}` : "Needs a tracking number"}</span>
+              {parcel.payoutError && <span>{parcel.payoutError}</span>}
+            </div>
+            <div>
+              <b>{gbp(parcel.proceedsPence)}</b>
+              {!parcel.trackingNumber && !parcel.receivedAt && (
+                <form className="track-form" onSubmit={(event) => { event.preventDefault(); const entry = tracking[parcel.id] ?? { carrier: "Royal Mail", number: "" }; parcelAction(parcel.id, "ship", entry.carrier, entry.number); }}>
+                  <select value={tracking[parcel.id]?.carrier ?? "Royal Mail"} onChange={(event) => setTracking({ ...tracking, [parcel.id]: { carrier: event.target.value, number: tracking[parcel.id]?.number ?? "" } })}>
+                    {CARRIERS.map((item) => <option key={item}>{item}</option>)}
+                  </select>
+                  <input placeholder="Tracking number" value={tracking[parcel.id]?.number ?? ""} onChange={(event) => setTracking({ ...tracking, [parcel.id]: { carrier: tracking[parcel.id]?.carrier ?? "Royal Mail", number: event.target.value } })} required />
+                  <button type="submit">Mark posted</button>
+                </form>
+              )}
+            </div>
+          </article>
+        ))}
+        <h3>Purchases</h3>
+        {purchases.length === 0 ? <p>No paid purchases yet.</p> : purchases.map((parcel) => (
+          <article className="my-listing" key={parcel.id}>
+            <div>
+              <strong>{parcel.items.map((item) => `${item.quantity} × ${item.name}`).join(", ") || "Cards"}</strong>
+              <span>{parcel.sellerName} · {parcel.trackingNumber ? `${parcel.carrier} ${parcel.trackingNumber}` : "Waiting for tracking"}</span>
+            </div>
+            {parcel.trackingNumber && !parcel.receivedAt && <button type="button" onClick={() => parcelAction(parcel.id, "receive")}>I received this</button>}
+            {parcel.receivedAt && <span>Received</span>}
+          </article>
+        ))}
+      </section>
       <div className="account-grid">
         <section className="account-panel">
           <h2>Sell a card</h2>
