@@ -19,7 +19,7 @@ export default function TermsPage() {
       <p>A dispute or a refund request stops the payout. It stays stopped while that request is open. The shop looks at the request. The shop does not send the card refund itself from this page.</p>
 
       <h2>Posting the card</h2>
-      <p>Every sale must be posted with tracking. You cannot mark a parcel posted without a tracking number. The couriers on the form are Royal Mail, Parcelforce, Evri, DPD, UPS, DHL, FedEx and Other. The tracking number has to be the one for that parcel.</p>
+      <p>Every sale must be posted with tracking. You cannot mark a parcel posted without a tracking number. The couriers on the form are Royal Mail, Parcelforce, Evri, DPD, UPS, DHL, FedEx and Other. The tracking number has to be the one for that parcel. Once it is saved, you and the buyer can both open that parcel and follow where it is.</p>
       <p>After the buyer pays, your account shows the UK address to post to, and the cards in that parcel. Post only those cards. A graded card is one slab, so it is listed as a quantity of one.</p>
 
       <h2>What the listing must say</h2>

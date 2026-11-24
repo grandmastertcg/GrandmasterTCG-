@@ -220,6 +220,10 @@ img.mk-face { background: #edf1f5; }
 .my-listing { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
 .my-listing span { display: block; color: var(--muted); font-size: 13px; }
 .parcel-panel { margin-top: 18px; }
+.track-where { color: var(--ink); font: 700 22px/1.3 "Space Grotesk", sans-serif; }
+.track-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 12px; }
+.track-list li { border-left: 3px solid var(--gold); padding-left: 12px; }
+.track-list span { display: block; color: var(--muted); font-size: 13px; }
 .parcel-panel h3 { margin: 18px 0 8px; font-size: 16px; }
 .track-form { display: grid; gap: 8px; min-width: 180px; }
 .track-form input, .track-form select { border: 1px solid var(--line); border-radius: 8px; padding: 8px; }

@@ -251,7 +251,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
       {message && <p className="join-error" role="status">{message}</p>}
       <section className="account-panel parcel-panel">
         <h2>Payouts and parcels</h2>
-        <p>Every sale must be posted with tracking. Stripe pays the seller when the buyer presses “I received this”. If the buyer does not press that, and does not open a dispute or request a refund, the seller is paid 14 days after the tracking number was added. Your 2% fee stays with the shop.</p>
+        <p>Every sale must be posted with tracking. Once the number is saved, you and the buyer can both open Track parcel and follow where it is. Stripe pays the seller when the buyer presses “I received this”. If the buyer does not press that, and does not open a dispute or request a refund, the seller is paid 14 days after the tracking number was added. Your 2% fee stays with the shop.</p>
         <button type="button" onClick={connectPayouts}>{payoutsConnected ? "Open Stripe payouts" : "Set up Stripe payouts"}</button>
         <h3>Sales to post</h3>
         {sales.length === 0 ? <p>No paid sales waiting.</p> : sales.map((parcel) => (
@@ -261,6 +261,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
               {parcel.shipTo && <span>Ship to {parcel.shipTo}</span>}
               <span>{parcel.holdKind ? (parcel.holdKind === "refund" ? `Buyer requested a refund. ${parcel.holdReason || ""}` : `Buyer opened a dispute. ${parcel.holdReason || ""}`) : parcel.paid ? (parcel.receivedAt ? "Buyer received it. Paid out." : "Paid out 14 days after tracking.") : parcel.receivedAt ? "Buyer received it. Payout pending." : parcel.trackingNumber ? `Posted by ${parcel.carrier}: ${parcel.trackingNumber}. Pays on ${payOn(parcel.shippedAt)} unless the buyer confirms, disputes or requests a refund.` : "Needs a tracking number"}</span>
               {parcel.payoutError && <span>{parcel.payoutError}</span>}
+              {parcel.trackingNumber && <a href={`/account/parcels/${parcel.id}`}>Track parcel</a>}
             </div>
             <div>
               <b>{gbp(parcel.proceedsPence)}</b>
@@ -285,6 +286,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
               <span>{parcel.sellerName} · {parcel.trackingNumber ? `${parcel.carrier} ${parcel.trackingNumber}` : "Waiting for tracking"}</span>
               {parcel.holdKind ? <span>{parcel.holdKind === "refund" ? "Refund requested. The seller is not paid while this is open." : "Dispute open. The seller is not paid while this is open."} {parcel.holdReason}</span> : parcel.paid ? <span>{parcel.receivedAt ? "Received. The seller has been paid." : "The seller was paid 14 days after tracking."}</span> : parcel.shippedAt && !parcel.receivedAt ? <span>If you do not confirm, dispute or request a refund, the seller is paid on {payOn(parcel.shippedAt)}.</span> : null}
             </div>
+            {parcel.trackingNumber && <a href={`/account/parcels/${parcel.id}`}>Track parcel</a>}
             {!parcel.paid && !parcel.holdKind && parcel.trackingNumber && !parcel.receivedAt && <button type="button" onClick={() => parcelAction(parcel.id, "receive")}>I received this</button>}
             {!parcel.paid && !parcel.holdKind && (
               <form className="track-form" onSubmit={(event) => { event.preventDefault(); openHold(parcel.id); }}>

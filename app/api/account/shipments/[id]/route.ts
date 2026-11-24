@@ -1,8 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
-import { CARRIERS, validTracking } from "@/lib/shipping";
+import { CARRIERS, carrierTrackUrl, lookupTracking, validTracking } from "@/lib/shipping";
 import { paySeller } from "@/lib/fulfillment";
+
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const user = await userFromRequest(request);
+  if (!user) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
+
+  const { id } = await context.params;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "Unknown parcel." }, { status: 400 });
+
+  const db = supabaseAdmin();
+  const { data: admin } = await db.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
+  const { data: shipment } = await db.from("shipments").select("id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,orders!inner(buyer_id,status,shipping_name,shipping_address)").eq("id", id).maybeSingle();
+  if (!shipment) return NextResponse.json({ error: "Unknown parcel." }, { status: 404 });
+
+  const order = Array.isArray(shipment.orders) ? shipment.orders[0] : shipment.orders;
+  if (order?.status !== "paid") return NextResponse.json({ error: "This order is not paid yet." }, { status: 400 });
+  const isSeller = shipment.seller_id === user.id || (shipment.seller_key === "shop" && Boolean(admin));
+  const isBuyer = order?.buyer_id === user.id;
+  if (!isSeller && !isBuyer) return NextResponse.json({ error: "You cannot view this parcel." }, { status: 403 });
+  if (!shipment.tracking_number) return NextResponse.json({ error: "This parcel has no tracking number yet." }, { status: 400 });
+
+  const { data: items } = await db.from("order_items").select("product_name,quantity,seller_id").eq("order_id", shipment.order_id);
+  const related = (items ?? []).filter((item) => (item.seller_id ?? "shop") === (shipment.seller_id ?? "shop"));
+  const address = order?.shipping_address as { line1?: string; line2?: string; city?: string; postal_code?: string; country?: string } | null;
+  const shipTo = [order?.shipping_name, address?.line1, address?.line2, address?.city, address?.postal_code, address?.country].filter(Boolean).join(", ");
+  const tracking = await lookupTracking(shipment.carrier, shipment.tracking_number);
+
+  return NextResponse.json({
+    id: shipment.id,
+    role: isSeller ? "sale" : "purchase",
+    sellerName: shipment.seller_name || "GrandmasterTCG",
+    shipTo: isSeller ? shipTo : "",
+    carrier: shipment.carrier,
+    trackingNumber: shipment.tracking_number,
+    shippedAt: shipment.shipped_at,
+    receivedAt: shipment.received_at,
+    courierUrl: carrierTrackUrl(shipment.carrier, shipment.tracking_number),
+    status: tracking?.status || "",
+    events: tracking?.events || [],
+    items: related.map((item) => ({ name: item.product_name, quantity: item.quantity }))
+  });
+}
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await userFromRequest(request);
