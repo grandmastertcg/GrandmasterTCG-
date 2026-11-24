@@ -16,6 +16,7 @@ type Parcel = {
   trackingNumber: string | null;
   receivedAt: string | null;
   proceedsPence: number;
+  stripeFeePence?: number;
   paid: boolean;
   payoutError: string | null;
   items: { name: string; quantity: number }[];
@@ -238,6 +239,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
             </div>
             <div>
               <b>{gbp(parcel.proceedsPence)}</b>
+              {(parcel.stripeFeePence ?? 0) > 0 && <span>Card fee {gbp(parcel.stripeFeePence ?? 0)}</span>}
               {!parcel.trackingNumber && !parcel.receivedAt && (
                 <form className="track-form" onSubmit={(event) => { event.preventDefault(); const entry = tracking[parcel.id] ?? { carrier: "Royal Mail", number: "" }; parcelAction(parcel.id, "ship", entry.carrier, entry.number); }}>
                   <select value={tracking[parcel.id]?.carrier ?? "Royal Mail"} onChange={(event) => setTracking({ ...tracking, [parcel.id]: { carrier: event.target.value, number: tracking[parcel.id]?.number ?? "" } })}>
@@ -318,7 +320,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
               {backPreview && <img className="photo-preview" src={backPreview} alt="Back of the card" />}
             </div>
             <label>Price (£)<input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required /></label>
-            {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)}. The shop keeps {gbp(priceSplit(form.price)!.fee)}.</p>}
+            {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)} before the card processing fee. The shop keeps {gbp(priceSplit(form.price)!.fee)}.</p>}
             <label>Quantity<input type="number" min={1} max={99} value={form.graded ? "1" : form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} required disabled={form.graded} /></label>
             <button type="submit" disabled={saving}>{saving ? "Saving..." : "List this card"}</button>
           </form>

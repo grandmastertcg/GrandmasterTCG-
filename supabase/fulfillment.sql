@@ -2,6 +2,7 @@
 alter table public.orders add column if not exists buyer_id uuid;
 alter table public.orders add column if not exists commission_pence integer not null default 0;
 alter table public.orders add column if not exists charge_id text;
+alter table public.orders add column if not exists stripe_fee_pence integer;
 alter table public.orders add column if not exists stock_adjusted boolean not null default false;
 
 alter table public.order_items add column if not exists seller_id uuid;
@@ -28,6 +29,7 @@ create table if not exists public.shipments (
   commission_pence integer not null check (commission_pence >= 0),
   transfer_id text,
   payout_error text,
+  stripe_fee_pence integer,
   created_at timestamptz not null default now(),
   unique (order_id, seller_key)
 );

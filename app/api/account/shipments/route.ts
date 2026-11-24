@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const { data: admin } = await db.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
   const { data: payout } = await db.from("seller_payout_accounts").select("stripe_account_id").eq("user_id", user.id).maybeSingle();
 
-  const { data: shipments, error } = await db.from("shipments").select("id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,proceeds_pence,commission_pence,transfer_id,payout_error,created_at,orders!inner(id,buyer_id,status,created_at,shipping_name,shipping_address)").eq("orders.status", "paid").order("created_at", { ascending: false });
+  const { data: shipments, error } = await db.from("shipments").select("id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,proceeds_pence,commission_pence,stripe_fee_pence,transfer_id,payout_error,created_at,orders!inner(id,buyer_id,status,created_at,shipping_name,shipping_address)").eq("orders.status", "paid").order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const orderIds = [...new Set((shipments ?? []).map((shipment) => shipment.order_id))];
@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
       receivedAt: shipment.received_at,
       proceedsPence: shipment.proceeds_pence,
       commissionPence: shipment.commission_pence,
+      stripeFeePence: shipment.stripe_fee_pence ?? 0,
       paid: Boolean(shipment.transfer_id) || (shipment.seller_key === "shop" && Boolean(shipment.received_at)),
       payoutError: shipment.payout_error,
       createdAt: order?.created_at ?? shipment.created_at,

@@ -123,17 +123,30 @@ export async function finalizeCheckout(sessionId: string) {
     }
     await db.from("orders").update({ stock_adjusted: true }).eq("id", order.id);
   }
+
+  await applyStripeFee(order.id);
 }
 
 export async function paySeller(shipmentId: string) {
   const db = supabaseAdmin();
-  const { data: shipment, error } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,received_at,transfer_id,order_id").eq("id", shipmentId).maybeSingle();
+  const { data: shipment, error } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,received_at,transfer_id,order_id").eq("id", shipmentId).maybeSingle();
   if (error || !shipment) throw new Error(error?.message || "Shipment not found.");
-  if (!shipment.received_at || shipment.transfer_id || shipment.seller_key === "shop" || shipment.proceeds_pence <= 0) return;
+  if (!shipment.received_at || shipment.transfer_id || shipment.seller_key === "shop") return;
+  await applyStripeFee(shipment.order_id);
 
-  const { data: account } = await db.from("seller_payout_accounts").select("stripe_account_id").eq("user_id", shipment.seller_id).maybeSingle();
+  const { data: current, error: reloadError } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,transfer_id").eq("id", shipmentId).maybeSingle();
+  if (reloadError || !current) throw new Error(reloadError?.message || "Shipment not found.");
+  if (current.transfer_id || current.seller_key === "shop") return;
+  if (current.proceeds_pence <= 0) {
+    if ((current.stripe_fee_pence ?? 0) > 0) {
+      await db.from("shipments").update({ payout_error: "The card processing fee used this payout." }).eq("id", current.id);
+    }
+    return;
+  }
+
+  const { data: account } = await db.from("seller_payout_accounts").select("stripe_account_id").eq("user_id", current.seller_id).maybeSingle();
   if (!account) {
-    await db.from("shipments").update({ payout_error: "Connect a Stripe payout account to receive this sale." }).eq("id", shipment.id);
+    await db.from("shipments").update({ payout_error: "Connect a Stripe payout account to receive this sale." }).eq("id", current.id);
     return;
   }
 
@@ -141,12 +154,71 @@ export async function paySeller(shipmentId: string) {
   if (!order?.charge_id) throw new Error("The card payment is not ready to transfer yet.");
 
   const transfer = await stripeClient().transfers.create({
-    amount: shipment.proceeds_pence,
+    amount: current.proceeds_pence,
     currency: "gbp",
     destination: account.stripe_account_id,
     source_transaction: order.charge_id,
-    metadata: { shipment_id: shipment.id }
-  }, { idempotencyKey: `shipment_${shipment.id}` });
+    metadata: { shipment_id: current.id }
+  }, { idempotencyKey: `shipment_${current.id}` });
 
-  await db.from("shipments").update({ transfer_id: transfer.id, payout_error: null }).eq("id", shipment.id);
+  await db.from("shipments").update({ transfer_id: transfer.id, payout_error: null }).eq("id", current.id);
+}
+
+function splitPence(total: number, weights: number[]) {
+  const sum = weights.reduce((totalWeight, weight) => totalWeight + weight, 0);
+  if (sum <= 0 || total <= 0) return weights.map(() => 0);
+  const exact = weights.map((weight) => (total * weight) / sum);
+  const shares = exact.map((value) => Math.floor(value));
+  let left = total - shares.reduce((totalShare, share) => totalShare + share, 0);
+  const remainders = exact.map((value, index) => ({ index, fraction: value - Math.floor(value) }));
+  remainders.sort((leftShare, rightShare) => rightShare.fraction - leftShare.fraction);
+  for (const remainder of remainders) {
+    if (left <= 0) break;
+    shares[remainder.index] += 1;
+    left -= 1;
+  }
+  return shares;
+}
+
+async function applyStripeFee(orderId: string) {
+  const db = supabaseAdmin();
+  const { data: order, error } = await db.from("orders").select("id,charge_id,stripe_fee_pence,total_pence").eq("id", orderId).maybeSingle();
+  if (error) {
+    if (/stripe_fee_pence/.test(error.message)) return;
+    throw new Error(error.message);
+  }
+  if (!order?.charge_id) return;
+
+  let fee = order.stripe_fee_pence;
+  if (fee == null) {
+    const charge = await stripeClient().charges.retrieve(order.charge_id, { expand: ["balance_transaction"] });
+    const balance = charge.balance_transaction;
+    if (!balance || typeof balance === "string") return;
+    fee = balance.fee;
+    const { data: saved } = await db.from("orders").update({ stripe_fee_pence: fee }).eq("id", order.id).is("stripe_fee_pence", null).select("stripe_fee_pence").maybeSingle();
+    if (!saved) {
+      const { data: existing } = await db.from("orders").select("stripe_fee_pence").eq("id", order.id).maybeSingle();
+      fee = existing?.stripe_fee_pence ?? fee;
+    }
+  }
+  if (fee == null) return;
+
+  const { data: shipments, error: shipmentError } = await db.from("shipments").select("id,proceeds_pence,commission_pence,stripe_fee_pence").eq("order_id", order.id);
+  if (shipmentError) {
+    if (/stripe_fee_pence/.test(shipmentError.message)) return;
+    throw new Error(shipmentError.message);
+  }
+  const pending = (shipments ?? []).filter((shipment) => shipment.stripe_fee_pence == null);
+  if (!pending.length) return;
+
+  const weights = (shipments ?? []).map((shipment) => shipment.proceeds_pence + shipment.commission_pence);
+  const shares = splitPence(fee, weights);
+  for (const [index, shipment] of (shipments ?? []).entries()) {
+    if (shipment.stripe_fee_pence != null) continue;
+    const share = Math.min(shares[index] ?? 0, shipment.proceeds_pence);
+    await db.from("shipments").update({
+      stripe_fee_pence: share,
+      proceeds_pence: shipment.proceeds_pence - share
+    }).eq("id", shipment.id).is("stripe_fee_pence", null);
+  }
 }
