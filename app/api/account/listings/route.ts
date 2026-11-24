@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sellerName, userFromRequest } from "@/lib/require-user";
 import { SALE_CONDITIONS, SALE_GAMES } from "@/lib/catalog";
+import { GRADERS, GRADES, gradeLabel } from "@/lib/grades";
+import { ownCardPhoto } from "@/lib/photos";
 
 const columns = "id,name,game,set_name,card_number,rarity,condition,price_pence,stock,image_url,active,created_at";
 
@@ -33,11 +35,15 @@ export async function POST(request: NextRequest) {
     const name = String(body.name ?? "").trim();
     const game = String(body.game ?? "").trim();
     const setName = String(body.set_name ?? "").trim();
-    const condition = String(body.condition ?? "").trim();
     const cardNumber = String(body.card_number ?? "").trim();
     const rarity = String(body.rarity ?? "").trim();
     const price = String(body.price ?? "").trim();
-    const stock = Number(body.stock);
+    let stock = Number(body.stock);
+    const graded = Boolean(body.graded);
+    let condition = String(body.condition ?? "").trim();
+    let grader: string | null = null;
+    let grade: string | null = null;
+    let certNumber: string | null = null;
 
     if (!name || name.length > 120 || !setName || setName.length > 120) {
       return NextResponse.json({ error: "Enter the card name and set." }, { status: 400 });
@@ -45,8 +51,24 @@ export async function POST(request: NextRequest) {
     if (!SALE_GAMES.includes(game as (typeof SALE_GAMES)[number])) {
       return NextResponse.json({ error: "Choose a supported game." }, { status: 400 });
     }
-    if (!SALE_CONDITIONS.includes(condition as (typeof SALE_CONDITIONS)[number])) {
+    if (graded) {
+      grader = String(body.grader ?? "").trim();
+      grade = String(body.grade ?? "").trim();
+      certNumber = String(body.cert_number ?? "").trim() || null;
+      if (!GRADERS.includes(grader as (typeof GRADERS)[number]) || !GRADES.includes(grade as (typeof GRADES)[number])) {
+        return NextResponse.json({ error: "Choose the grading company and grade." }, { status: 400 });
+      }
+      if (certNumber && !/^[A-Za-z0-9-]{4,24}$/.test(certNumber)) {
+        return NextResponse.json({ error: "Enter the certificate number from the slab." }, { status: 400 });
+      }
+      condition = gradeLabel(grader, grade);
+      stock = 1;
+    } else if (!SALE_CONDITIONS.includes(condition as (typeof SALE_CONDITIONS)[number])) {
       return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
+    }
+    const imageUrl = String(body.image_url ?? "").trim();
+    if (imageUrl && !ownCardPhoto(imageUrl)) {
+      return NextResponse.json({ error: "Upload the card photo again." }, { status: 400 });
     }
     if (cardNumber.length > 40 || rarity.length > 40) {
       return NextResponse.json({ error: "Card number or rarity is too long." }, { status: 400 });
@@ -72,9 +94,12 @@ export async function POST(request: NextRequest) {
         card_number: cardNumber,
         rarity,
         condition,
+        grader,
+        grade,
+        cert_number: certNumber,
         price_pence: pricePence,
         stock,
-        image_url: null,
+        image_url: imageUrl || null,
         active: true,
         seller_id: user.id,
         seller_name: sellerName(user)
@@ -83,9 +108,9 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      const missingColumn = /seller_id|seller_name/.test(error.message);
+      const missingColumn = /seller_id|seller_name|grader|grade|cert_number/.test(error.message);
       return NextResponse.json(
-        { error: missingColumn ? "Seller accounts are not enabled in the database yet." : "Unable to save this listing." },
+        { error: missingColumn ? "Card photos and grades are not enabled in the database yet." : "Unable to save this listing." },
         { status: 500 }
       );
     }

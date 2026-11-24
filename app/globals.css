@@ -217,6 +217,9 @@ img.mk-face { background: #edf1f5; }
 .parcel-panel h3 { margin: 18px 0 8px; font-size: 16px; }
 .track-form { display: grid; gap: 8px; min-width: 180px; }
 .track-form input, .track-form select { border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.check-row { display: flex; gap: 8px; align-items: center; font-weight: 800; }
+.photo-preview { width: 92px; height: 128px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+.mk-cond small { display: block; font-weight: 650; color: var(--muted); }
 .my-listing button { background: transparent; color: #8d3b32; border: 0; padding: 0; font-weight: 800; }
 .parcel-panel .my-listing button, .track-form button { background: var(--navy); color: white; padding: 8px 10px; border-radius: 8px; }
 .join-error { color: #8d3b32; }

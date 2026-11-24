@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase-browser";
 import { SALE_CONDITIONS, SALE_GAMES, gbp } from "@/lib/catalog";
 import { commissionOnSale } from "@/lib/commission";
 import { CARRIERS } from "@/lib/shipping";
+import { GRADERS, GRADES } from "@/lib/grades";
 
 type Parcel = {
   id: string;
@@ -42,6 +43,8 @@ export default function AccountPage() {
   const [tracking, setTracking] = useState<Record<string, { carrier: string; number: string }>>({});
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [preview, setPreview] = useState("");
   const [form, setForm] = useState({
     name: "",
     game: "Pokémon",
@@ -49,6 +52,10 @@ export default function AccountPage() {
     card_number: "",
     rarity: "",
     condition: "Near Mint",
+    graded: false,
+    grader: "PSA",
+    grade: "10",
+    cert_number: "",
     price: "",
     stock: "1"
   });
@@ -106,14 +113,29 @@ export default function AccountPage() {
     setSaving(true);
     setMessage("");
     try {
+      let imageUrl = "";
+      if (photo) {
+        const upload = new FormData();
+        upload.set("photo", photo);
+        const photoResponse = await fetch("/api/account/photos", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: upload
+        });
+        const photoBody = await photoResponse.json();
+        if (!photoResponse.ok) throw new Error(photoBody.error || "The photo could not be uploaded.");
+        imageUrl = photoBody.url;
+      }
       const response = await fetch("/api/account/listings", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ...form, stock: Number(form.stock) })
+        body: JSON.stringify({ ...form, stock: Number(form.stock), image_url: imageUrl })
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Listing could not be saved.");
-      setForm({ ...form, name: "", set_name: "", card_number: "", rarity: "", price: "" });
+      setForm({ ...form, name: "", set_name: "", card_number: "", rarity: "", cert_number: "", price: "" });
+      setPhoto(null);
+      setPreview("");
       setMessage("Listing is live on the market.");
       await refresh(token);
     } catch (error) {
@@ -245,14 +267,39 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
             <label>Set<input value={form.set_name} onChange={(event) => setForm({ ...form, set_name: event.target.value })} required /></label>
             <label>Number<input value={form.card_number} onChange={(event) => setForm({ ...form, card_number: event.target.value })} /></label>
             <label>Rarity<input value={form.rarity} onChange={(event) => setForm({ ...form, rarity: event.target.value })} /></label>
-            <label>Condition
-              <select value={form.condition} onChange={(event) => setForm({ ...form, condition: event.target.value })}>
-                {SALE_CONDITIONS.map((condition) => <option key={condition}>{condition}</option>)}
-              </select>
+            <label className="check-row"><input type="checkbox" checked={form.graded} onChange={(event) => setForm({ ...form, graded: event.target.checked, stock: event.target.checked ? "1" : form.stock })} /> This card is graded</label>
+            {form.graded ? (
+              <>
+                <label>Grading company
+                  <select value={form.grader} onChange={(event) => setForm({ ...form, grader: event.target.value })}>
+                    {GRADERS.map((grader) => <option key={grader}>{grader}</option>)}
+                  </select>
+                </label>
+                <label>Grade
+                  <select value={form.grade} onChange={(event) => setForm({ ...form, grade: event.target.value })}>
+                    {GRADES.map((grade) => <option key={grade}>{grade}</option>)}
+                  </select>
+                </label>
+                <label>Certificate number<input value={form.cert_number} onChange={(event) => setForm({ ...form, cert_number: event.target.value })} placeholder="From the slab label" /></label>
+              </>
+            ) : (
+              <label>Condition
+                <select value={form.condition} onChange={(event) => setForm({ ...form, condition: event.target.value })}>
+                  {SALE_CONDITIONS.map((condition) => <option key={condition}>{condition}</option>)}
+                </select>
+              </label>
+            )}
+            <label>Photo of the card
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setPhoto(file);
+                setPreview(file ? URL.createObjectURL(file) : "");
+              }} />
             </label>
+            {preview && <img className="photo-preview" src={preview} alt="Card preview" />}
             <label>Price (£)<input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required /></label>
             {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)}. The shop keeps {gbp(priceSplit(form.price)!.fee)}.</p>}
-            <label>Quantity<input type="number" min={1} max={99} value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} required /></label>
+            <label>Quantity<input type="number" min={1} max={99} value={form.graded ? "1" : form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} required disabled={form.graded} /></label>
             <button type="submit" disabled={saving}>{saving ? "Saving..." : "List this card"}</button>
           </form>
         </section>

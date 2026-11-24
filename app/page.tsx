@@ -78,7 +78,8 @@ export default function Home() {
     const list = products.filter((product) => {
       if (product.stock <= 0) return false;
       if (game !== "All games" && product.game !== game) return false;
-      if (condition !== "Any condition" && product.condition !== condition) return false;
+      if (condition === "Graded" && !product.grader) return false;
+      if (condition !== "Any condition" && condition !== "Graded" && product.condition !== condition) return false;
       if (rarity !== "Any rarity" && (product.rarity || "Unspecified") !== rarity) return false;
       if (product.price_pence > maxPence) return false;
       if (!query) return true;
@@ -339,7 +340,10 @@ export default function Home() {
                       <span>{product.set_name || "Set not listed"}</span>
                       <small>{product.card_number || product.game}</small>
                     </div>
-                    <div className={`mk-cond cond-${product.condition.split(" ")[0].toLowerCase()}`}>{product.condition}</div>
+                    <div className={`mk-cond cond-${product.condition.split(" ")[0].toLowerCase()}`}>
+                      {product.condition}
+                      {product.cert_number && <small>Cert {product.cert_number}</small>}
+                    </div>
                     <div>{product.stock === 1 ? "1 left" : `${product.stock} in stock`}</div>
                     <div className="mk-price">{gbp(product.price_pence)}</div>
                     <button
@@ -402,7 +406,7 @@ export default function Home() {
             {selected.description && <p>{selected.description}</p>}
             <div className="mk-offer">
               <div>
-                <span>{selected.condition}</span>
+                <span>{selected.condition}{selected.cert_number ? ` · Cert ${selected.cert_number}` : ""}</span>
                 <strong>{gbp(selected.price_pence)}</strong>
                 <small>{selected.stock === 1 ? "Only 1 in stock" : `${selected.stock} available`}</small>
               </div>

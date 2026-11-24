@@ -13,6 +13,9 @@ export type Product = {
   language?: string | null;
   finish?: string | null;
   seller_name?: string | null;
+  grader?: string | null;
+  grade?: string | null;
+  cert_number?: string | null;
 };
 
 export const SALE_GAMES = ["Pokémon", "Magic: The Gathering", "Yu-Gi-Oh!", "One Piece", "Lorcana", "Other"] as const;
@@ -27,7 +30,7 @@ export const GAMES = [
   "Lorcana"
 ] as const;
 
-export const CONDITIONS = ["Any condition", "Near Mint", "Excellent", "Good", "Played", "Poor"] as const;
+export const CONDITIONS = ["Any condition", "Graded", "Near Mint", "Excellent", "Good", "Played", "Poor"] as const;
 
 export const demoCatalog: Product[] = [
   { id: "demo-1", name: "Charizard ex", game: "Pokémon", set_name: "Obsidian Flames", card_number: "223/197", rarity: "Ultra Rare", condition: "Near Mint", price_pence: 2499, image_url: null, stock: 1, language: "English", finish: "Holofoil" },

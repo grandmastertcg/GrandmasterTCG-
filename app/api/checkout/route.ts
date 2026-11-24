@@ -17,13 +17,13 @@ export async function POST(req: NextRequest) {
     }
     const db = supabaseAdmin();
     const { data: products, error } = await db.from("products")
-      .select("id,name,price_pence,stock,active,seller_id,seller_name").in("id", ids);
+      .select("id,name,condition,price_pence,stock,active,seller_id,seller_name").in("id", ids);
     if (error || !products) throw error || new Error("Products unavailable");
     const line_items = body.items.map((item: { product_id?: string; quantity?: number }) => {
       const p = products.find(x => x.id === item.product_id);
       const qty = Number(item.quantity);
       if (!p || !p.active || !Number.isInteger(qty) || qty < 1 || qty > p.stock) throw new Error("A card is no longer available in that quantity.");
-      return { price_data: { currency: "gbp", product_data: { name: p.name }, unit_amount: p.price_pence }, quantity: qty };
+      return { price_data: { currency: "gbp", product_data: { name: `${p.name} (${p.condition})` }, unit_amount: p.price_pence }, quantity: qty };
     });
     const commissionPence = body.items.reduce((sum: number, item: { product_id?: string; quantity?: number }) => {
       const p = products.find(x => x.id === item.product_id);
