@@ -396,7 +396,7 @@ export default function Home() {
         <div className="mk-scrim" onClick={() => setSelectedId(null)}>
           <aside className="mk-drawer" onClick={(event) => event.stopPropagation()} role="dialog" aria-label={selected.name}>
             <button className="mk-close" onClick={() => setSelectedId(null)}>Close</button>
-            <CardFace product={selected} large />
+            <CardSides product={selected} />
             <p className="mk-game">{selected.game}</p>
             <h2>{selected.name}</h2>
             <p className="mk-meta">
@@ -472,6 +472,24 @@ function accountLabelFor(user?: { email?: string | null; user_metadata?: { displ
   if (name) return name;
   if (user?.email) return user.email.split("@")[0];
   return "Sign in";
+}
+
+function CardSides({ product }: { product: Product }) {
+  if (!product.image_url && !product.back_image_url) return <CardFace product={product} large />;
+  return (
+    <div className="mk-sides">
+      <figure>
+        {product.image_url ? <img className="mk-face is-large" src={product.image_url} alt="" /> : <CardFace product={product} large />}
+        <figcaption>Front</figcaption>
+      </figure>
+      {product.back_image_url && (
+        <figure>
+          <img className="mk-face is-large" src={product.back_image_url} alt="" />
+          <figcaption>Back</figcaption>
+        </figure>
+      )}
+    </div>
+  );
 }
 
 function CardFace({ product, large = false }: { product: Product; large?: boolean }) {

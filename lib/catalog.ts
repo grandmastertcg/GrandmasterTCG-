@@ -6,6 +6,7 @@ export type Product = {
   condition: string;
   price_pence: number;
   image_url: string | null;
+  back_image_url?: string | null;
   stock: number;
   card_number?: string | null;
   rarity?: string | null;

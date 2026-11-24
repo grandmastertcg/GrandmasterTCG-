@@ -43,8 +43,10 @@ export default function AccountPage() {
   const [tracking, setTracking] = useState<Record<string, { carrier: string; number: string }>>({});
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [preview, setPreview] = useState("");
+  const [frontPhoto, setFrontPhoto] = useState<File | null>(null);
+  const [backPhoto, setBackPhoto] = useState<File | null>(null);
+  const [frontPreview, setFrontPreview] = useState("");
+  const [backPreview, setBackPreview] = useState("");
   const [form, setForm] = useState({
     name: "",
     game: "Pokémon",
@@ -108,34 +110,40 @@ export default function AccountPage() {
     }
   }
 
+  async function uploadPhoto(file: File) {
+    const upload = new FormData();
+    upload.set("photo", file);
+    const photoResponse = await fetch("/api/account/photos", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: upload
+    });
+    const photoBody = await photoResponse.json();
+    if (!photoResponse.ok) throw new Error(photoBody.error || "The photo could not be uploaded.");
+    return String(photoBody.url ?? "");
+  }
+
   async function createListing(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
     setMessage("");
     try {
       let imageUrl = "";
-      if (photo) {
-        const upload = new FormData();
-        upload.set("photo", photo);
-        const photoResponse = await fetch("/api/account/photos", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: upload
-        });
-        const photoBody = await photoResponse.json();
-        if (!photoResponse.ok) throw new Error(photoBody.error || "The photo could not be uploaded.");
-        imageUrl = photoBody.url;
-      }
+      let backImageUrl = "";
+      if (frontPhoto) imageUrl = await uploadPhoto(frontPhoto);
+      if (backPhoto) backImageUrl = await uploadPhoto(backPhoto);
       const response = await fetch("/api/account/listings", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ...form, stock: Number(form.stock), image_url: imageUrl })
+        body: JSON.stringify({ ...form, stock: Number(form.stock), image_url: imageUrl, back_image_url: backImageUrl })
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Listing could not be saved.");
       setForm({ ...form, name: "", set_name: "", card_number: "", rarity: "", cert_number: "", price: "" });
-      setPhoto(null);
-      setPreview("");
+      setFrontPhoto(null);
+      setBackPhoto(null);
+      setFrontPreview("");
+      setBackPreview("");
       setMessage("Listing is live on the market.");
       await refresh(token);
     } catch (error) {
@@ -289,14 +297,26 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
                 </select>
               </label>
             )}
-            <label>Photo of the card
-              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setPhoto(file);
-                setPreview(file ? URL.createObjectURL(file) : "");
-              }} />
-            </label>
-            {preview && <img className="photo-preview" src={preview} alt="Card preview" />}
+            <div className="photo-pair">
+              <label>Front
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setFrontPhoto(file);
+                  setFrontPreview(file ? URL.createObjectURL(file) : "");
+                }} />
+              </label>
+              <label>Back
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setBackPhoto(file);
+                  setBackPreview(file ? URL.createObjectURL(file) : "");
+                }} />
+              </label>
+            </div>
+            <div className="photo-pair">
+              {frontPreview && <img className="photo-preview" src={frontPreview} alt="Front of the card" />}
+              {backPreview && <img className="photo-preview" src={backPreview} alt="Back of the card" />}
+            </div>
             <label>Price (£)<input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required /></label>
             {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)}. The shop keeps {gbp(priceSplit(form.price)!.fee)}.</p>}
             <label>Quantity<input type="number" min={1} max={99} value={form.graded ? "1" : form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} required disabled={form.graded} /></label>

@@ -67,8 +67,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
     }
     const imageUrl = String(body.image_url ?? "").trim();
-    if (imageUrl && !ownCardPhoto(imageUrl)) {
-      return NextResponse.json({ error: "Upload the card photo again." }, { status: 400 });
+    const backImageUrl = String(body.back_image_url ?? "").trim();
+    if ((imageUrl && !ownCardPhoto(imageUrl)) || (backImageUrl && !ownCardPhoto(backImageUrl))) {
+      return NextResponse.json({ error: "Upload the card photos again." }, { status: 400 });
     }
     if (cardNumber.length > 40 || rarity.length > 40) {
       return NextResponse.json({ error: "Card number or rarity is too long." }, { status: 400 });
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
         price_pence: pricePence,
         stock,
         image_url: imageUrl || null,
+        back_image_url: backImageUrl || null,
         active: true,
         seller_id: user.id,
         seller_name: sellerName(user)
@@ -108,7 +110,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      const missingColumn = /seller_id|seller_name|grader|grade|cert_number/.test(error.message);
+      const missingColumn = /seller_id|seller_name|grader|grade|cert_number|back_image_url/.test(error.message);
       return NextResponse.json(
         { error: missingColumn ? "Card photos and grades are not enabled in the database yet." : "Unable to save this listing." },
         { status: 500 }

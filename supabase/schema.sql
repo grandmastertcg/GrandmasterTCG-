@@ -11,6 +11,7 @@ create table if not exists public.products (
   price_pence integer not null check (price_pence >= 0),
   stock integer not null default 1 check (stock >= 0),
   image_url text,
+  back_image_url text,
   description text,
   active boolean not null default true,
   seller_id uuid,
