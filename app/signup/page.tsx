@@ -61,6 +61,7 @@ export default function SignupPage() {
         </form>
         {message && <p className="join-error" role="status">{message}</p>}
         <p>Already registered? <a href="/login">Sign in</a></p>
+        <p>By creating an account you agree to the <a href="/terms">terms and conditions</a>.</p>
       </section>
     </main>
   );

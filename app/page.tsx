@@ -388,6 +388,7 @@ export default function Home() {
         <div className="mk-shell">
           <strong>GrandmasterTCG</strong>
           <span>Independent UK trading-card retailer. Game names and card names are trademarks of their owners.</span>
+          <a href="/terms">Terms and conditions</a>
           <span>© {new Date().getFullYear()}</span>
         </div>
       </footer>

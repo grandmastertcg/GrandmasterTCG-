@@ -216,7 +216,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
         <div>
           <a href="/">GrandmasterTCG</a>
           <h1>{label}</h1>
-          <p>Buy from the market, and sell cards under this name. The shop keeps 2% of each sale, up to £100 per card.</p>
+          <p>Buy from the market, and sell cards under this name. The shop keeps 2% of each sale, up to £100 per card. Read the <a href="/terms">terms for sellers</a> before you list a card.</p>
         </div>
         <div>
           {admin && <a href="/admin">Shop admin</a>}

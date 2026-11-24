@@ -133,7 +133,13 @@ img.mk-face { background: #edf1f5; }
 .mk-steps ol { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 12px 0 0; padding: 0; list-style: none; }
 .mk-steps li { color: var(--muted); line-height: 1.45; }
 .mk-steps strong { display: block; color: var(--ink); margin-bottom: 4px; }
+.terms { width: min(720px, calc(100% - 32px)); margin: 32px auto 64px; }
+.terms h1 { margin: 8px 0 12px; font: 700 36px/1 "Space Grotesk", sans-serif; }
+.terms h2 { margin: 28px 0 8px; font: 700 22px/1.2 "Space Grotesk", sans-serif; }
+.terms p { color: var(--ink); line-height: 1.55; }
+.terms a { color: var(--gold); font-weight: 800; }
 .mk-foot { border-top: 1px solid var(--line); padding: 22px 0 32px; color: var(--muted); font-size: 13px; }
+.mk-foot a { color: var(--gold); font-weight: 800; }
 .mk-foot .mk-shell { align-items: start; }
 .mk-foot strong { color: var(--ink); }
 
