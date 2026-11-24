@@ -5,6 +5,18 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase-browser";
 import { gbp } from "@/lib/catalog";
 
+type RefundRequest = {
+  id: string;
+  sellerName: string;
+  email: string | null;
+  kind: string | null;
+  reason: string | null;
+  refundPence: number;
+  carrier: string | null;
+  trackingNumber: string | null;
+  items: { name: string; quantity: number }[];
+};
+
 type Transaction = {
   id: string;
   created: string;
@@ -22,6 +34,9 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [requests, setRequests] = useState<RefundRequest[]>([]);
+  const [token, setToken] = useState("");
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
@@ -42,6 +57,7 @@ export default function AdminPage() {
       }
 
       const token = sessionData.session.access_token;
+      setToken(token);
       const access = await fetch("/api/admin/check", {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store"
@@ -79,6 +95,12 @@ export default function AdminPage() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Transactions could not be loaded.");
       setTransactions(Array.isArray(body.transactions) ? body.transactions : []);
+      const refunds = await fetch("/api/admin/refunds", {
+        headers: { Authorization: `Bearer ${sessionToken}` },
+        cache: "no-store"
+      });
+      const refundBody = await refunds.json();
+      if (refunds.ok) setRequests(Array.isArray(refundBody.requests) ? refundBody.requests : []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Transactions could not be loaded.");
     } finally {
@@ -95,23 +117,47 @@ export default function AdminPage() {
   return (
     <TransactionsScreen
       transactions={transactions}
+      requests={requests}
+      notice={notice}
       error={error}
       refreshing={refreshing}
       onRefresh={() => loadTransactions()}
+      onDecide={async (id, action) => {
+        setNotice("");
+        setError("");
+        const response = await fetch(`/api/admin/refunds/${id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action })
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          setError(body.error || "That refund could not be completed.");
+          return;
+        }
+        setNotice(body.message || "Saved.");
+        await loadTransactions(token);
+      }}
     />
   );
 }
 
 function TransactionsScreen({
   transactions,
+  requests,
+  notice,
   error,
   refreshing,
-  onRefresh
+  onRefresh,
+  onDecide
 }: {
   transactions: Transaction[];
+  requests: RefundRequest[];
+  notice: string;
   error: string;
   refreshing: boolean;
   onRefresh: () => void;
+  onDecide: (id: string, action: "refund" | "release") => void;
 }) {
   const total = transactions.reduce((sum, transaction) => sum + transaction.amountPence, 0);
   const commission = transactions.reduce((sum, transaction) => sum + (transaction.commissionPence ?? 0), 0);
@@ -135,6 +181,30 @@ function TransactionsScreen({
         <div><span>Your 2% fee</span><strong>{gbp(commission)}</strong></div>
       </section>
 
+      <section className="desk-table">
+        <h2>Refunds and disputes</h2>
+        <p>Read the buyer’s message. If the card did not arrive, or it is not the card they bought, refund them. Stripe sends that part of the payment back and the seller is not paid. If the card is fine, release the payout. The seller is then paid when the buyer confirms, or 2 days after the courier shows the parcel delivered.</p>
+        {requests.length === 0 ? <p className="desk-empty">No open refund or dispute requests.</p> : requests.map((request) => (
+          <article key={request.id}>
+            <div>
+              <strong>{request.kind === "refund" ? "Refund request" : "Dispute"}</strong>
+              <span>{request.email || "No email"} · seller {request.sellerName}</span>
+              <span>{request.reason}</span>
+              {request.trackingNumber && <span>{request.carrier} {request.trackingNumber}</span>}
+            </div>
+            <ul>
+              {request.items.map((item, index) => <li key={`${request.id}-${index}`}>{item.quantity} × {item.name}</li>)}
+            </ul>
+            <div>
+              <b>{gbp(request.refundPence)}</b>
+              <button type="button" onClick={() => onDecide(request.id, "refund")}>Refund the buyer</button>
+              <button type="button" onClick={() => onDecide(request.id, "release")}>Release the payout</button>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      {notice && <p role="status">{notice}</p>}
       {error && <p className="desk-error" role="status">{error}</p>}
 
       {transactions.length === 0 && !error ? (

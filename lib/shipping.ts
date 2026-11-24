@@ -57,9 +57,21 @@ export async function lookupTracking(carrier: string | null, trackingNumber: str
       : [];
     return {
       status: String(body.statusDescription || body.status || ""),
+      delivered: events.some((event) => event.status === "delivered") || String(body.status || "").toLowerCase() === "delivered",
+      deliveredAt: events.find((event) => event.status === "delivered")?.time || null,
       events
     };
   } catch {
     return null;
   }
+}
+
+export function deliveryMoment(tracking: { delivered?: boolean; deliveredAt?: string | null; status: string; events: ParcelScan[] } | null) {
+  if (!tracking) return null;
+  const scan = tracking.events.find((event) => event.status === "delivered");
+  const delivered = Boolean(scan) || tracking.delivered || tracking.status.toLowerCase() === "delivered";
+  if (!delivered) return null;
+  const parsed = scan?.time ? new Date(scan.time) : new Date();
+  if (Number.isNaN(parsed.getTime()) || parsed.getTime() > Date.now()) return new Date();
+  return parsed;
 }

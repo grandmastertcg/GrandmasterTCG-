@@ -1,4 +1,5 @@
 import { commissionOnSale } from "@/lib/commission";
+import { deliveryMoment, lookupTracking } from "@/lib/shipping";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
 
@@ -6,12 +7,13 @@ export function sellerKey(sellerId: string | null | undefined) {
   return sellerId || "shop";
 }
 
-export const PAYOUT_WAIT_MS = 14 * 24 * 60 * 60 * 1000;
+const INSPECTION_MS = 2 * 24 * 60 * 60 * 1000;
 
-function payoutDue(shipment: { received_at: string | null; shipped_at: string | null }) {
+function payoutDue(shipment: { received_at: string | null; delivered_at: string | null; refunded_at?: string | null }) {
+  if (shipment.refunded_at) return false;
   if (shipment.received_at) return true;
-  if (!shipment.shipped_at) return false;
-  return Date.now() - new Date(shipment.shipped_at).getTime() >= PAYOUT_WAIT_MS;
+  if (!shipment.delivered_at) return false;
+  return Date.now() - new Date(shipment.delivered_at).getTime() >= INSPECTION_MS;
 }
 
 function holdMessage(kind: string | null) {
@@ -143,9 +145,9 @@ export async function finalizeCheckout(sessionId: string) {
 
 export async function paySeller(shipmentId: string) {
   const db = supabaseAdmin();
-  const { data: shipment, error } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,received_at,shipped_at,hold_at,hold_kind,transfer_id,released_at,order_id").eq("id", shipmentId).maybeSingle();
+  const { data: shipment, error } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,received_at,delivered_at,refunded_at,shipped_at,hold_at,hold_kind,transfer_id,released_at,order_id").eq("id", shipmentId).maybeSingle();
   if (error || !shipment) throw new Error(error?.message || "Shipment not found.");
-  if (shipment.transfer_id || shipment.released_at) return;
+  if (shipment.refunded_at || shipment.transfer_id || shipment.released_at) return;
   if (shipment.hold_at) {
     await db.from("shipments").update({ payout_error: holdMessage(shipment.hold_kind) }).eq("id", shipment.id);
     return;
@@ -191,11 +193,86 @@ export async function paySeller(shipmentId: string) {
   await db.from("shipments").update({ transfer_id: transfer.id, released_at: new Date().toISOString(), payout_error: null }).eq("id", current.id);
 }
 
-export async function releaseDuePayouts() {
+export async function recordDelivery(shipmentId: string, when: Date) {
   const db = supabaseAdmin();
-  const { data, error } = await db.from("shipments").select("id,received_at,shipped_at,hold_at,transfer_id,released_at").is("transfer_id", null).is("released_at", null).is("hold_at", null);
+  const { error } = await db.from("shipments").update({ delivered_at: when.toISOString() }).eq("id", shipmentId).is("delivered_at", null);
+  if (error && !/delivered_at/.test(error.message)) throw new Error(error.message);
+}
+
+export async function noteDeliveries() {
+  const db = supabaseAdmin();
+  const { data, error } = await db.from("shipments").select("id,carrier,tracking_number").is("delivered_at", null).is("refunded_at", null).is("transfer_id", null).is("released_at", null).not("tracking_number", "is", null);
   if (error) {
-    if (/released_at|hold_at/.test(error.message)) return;
+    if (/delivered_at|refunded_at/.test(error.message)) return;
+    throw new Error(error.message);
+  }
+  for (const shipment of data ?? []) {
+    if (!shipment.tracking_number) continue;
+    const when = deliveryMoment(await lookupTracking(shipment.carrier, shipment.tracking_number));
+    if (!when) continue;
+    await recordDelivery(shipment.id, when);
+  }
+}
+
+export async function refundShipment(shipmentId: string) {
+  const db = supabaseAdmin();
+  const { data: shipment, error } = await db.from("shipments").select("id,seller_key,proceeds_pence,commission_pence,stripe_fee_pence,transfer_id,refunded_at,hold_at,order_id").eq("id", shipmentId).maybeSingle();
+  if (error || !shipment) throw new Error(error?.message || "Unknown parcel.");
+  if (shipment.refunded_at) return;
+  if (!shipment.hold_at) throw new Error("The buyer has not asked for a refund or opened a dispute.");
+  await applyStripeFee(shipment.order_id);
+
+  const { data: current, error: reloadError } = await db.from("shipments").select("id,seller_key,proceeds_pence,commission_pence,stripe_fee_pence,transfer_id,refunded_at,order_id").eq("id", shipmentId).maybeSingle();
+  if (reloadError || !current) throw new Error(reloadError?.message || "Unknown parcel.");
+  if (current.refunded_at) return;
+  const gross = current.proceeds_pence + current.commission_pence + (current.stripe_fee_pence ?? 0);
+  if (gross <= 0) throw new Error("There is nothing left to refund.");
+
+  const { data: order } = await db.from("orders").select("charge_id").eq("id", current.order_id).maybeSingle();
+  if (!order?.charge_id) throw new Error("The card payment is not ready to refund.");
+  const stripe = stripeClient();
+  if (current.transfer_id && current.seller_key !== "shop" && current.proceeds_pence > 0) {
+    await stripe.transfers.createReversal(current.transfer_id, { amount: current.proceeds_pence }, { idempotencyKey: `reversal_${current.id}` });
+  }
+  const refund = await stripe.refunds.create({
+    charge: order.charge_id,
+    amount: gross,
+    metadata: { shipment_id: current.id }
+  }, { idempotencyKey: `refund_${current.id}` });
+  const { error: saveError } = await db.from("shipments").update({
+    refunded_at: new Date().toISOString(),
+    stripe_refund_id: refund.id,
+    released_at: new Date().toISOString(),
+    payout_error: null
+  }).eq("id", current.id);
+  if (saveError) throw new Error(saveError.message);
+}
+
+export async function releaseHold(shipmentId: string) {
+  const db = supabaseAdmin();
+  const { data: shipment, error } = await db.from("shipments").select("id,refunded_at,hold_at").eq("id", shipmentId).maybeSingle();
+  if (error || !shipment) throw new Error(error?.message || "Unknown parcel.");
+  if (shipment.refunded_at) throw new Error("This parcel has already been refunded.");
+  if (!shipment.hold_at) return;
+  const { error: updateError } = await db.from("shipments").update({
+    hold_at: null,
+    hold_kind: null,
+    hold_reason: null,
+    payout_error: null
+  }).eq("id", shipmentId);
+  if (updateError) throw new Error(updateError.message);
+}
+
+export async function releaseDuePayouts() {
+  try {
+    await noteDeliveries();
+  } catch {
+    // A courier lookup can fail. Buyer confirmation can still pay the seller.
+  }
+  const db = supabaseAdmin();
+  const { data, error } = await db.from("shipments").select("id,received_at,delivered_at,refunded_at,hold_at,transfer_id,released_at").is("transfer_id", null).is("released_at", null).is("hold_at", null).is("refunded_at", null);
+  if (error) {
+    if (/released_at|hold_at|delivered_at|refunded_at/.test(error.message)) return;
     throw new Error(error.message);
   }
   for (const shipment of data ?? []) {

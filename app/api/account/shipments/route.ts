@@ -12,9 +12,9 @@ export async function GET(request: NextRequest) {
   const { data: payout } = await db.from("seller_payout_accounts").select("stripe_account_id").eq("user_id", user.id).maybeSingle();
   await releaseDuePayouts();
 
-  const { data: shipments, error } = await db.from("shipments").select("id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,hold_kind,hold_reason,hold_at,proceeds_pence,commission_pence,stripe_fee_pence,transfer_id,released_at,payout_error,created_at,orders!inner(id,buyer_id,status,created_at,shipping_name,shipping_address)").eq("orders.status", "paid").order("created_at", { ascending: false });
+  const { data: shipments, error } = await db.from("shipments").select("id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,delivered_at,refunded_at,hold_kind,hold_reason,hold_at,proceeds_pence,commission_pence,stripe_fee_pence,transfer_id,released_at,payout_error,created_at,orders!inner(id,buyer_id,status,created_at,shipping_name,shipping_address)").eq("orders.status", "paid").order("created_at", { ascending: false });
   if (error) {
-    if (/hold_at|hold_kind|released_at/.test(error.message)) {
+    if (/hold_at|hold_kind|released_at|delivered_at|refunded_at/.test(error.message)) {
       return NextResponse.json({ error: "Payout holds are not enabled in the database yet." }, { status: 500 });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -42,6 +42,8 @@ export async function GET(request: NextRequest) {
       trackingNumber: shipment.tracking_number,
       shippedAt: shipment.shipped_at,
       receivedAt: shipment.received_at,
+      deliveredAt: shipment.delivered_at,
+      refundedAt: shipment.refunded_at,
       holdKind: shipment.hold_kind,
       holdReason: shipment.hold_reason,
       proceedsPence: shipment.proceeds_pence,

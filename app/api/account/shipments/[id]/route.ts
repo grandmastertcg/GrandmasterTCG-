@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
-import { CARRIERS, carrierTrackUrl, lookupTracking, validTracking } from "@/lib/shipping";
-import { paySeller } from "@/lib/fulfillment";
+import { CARRIERS, carrierTrackUrl, deliveryMoment, lookupTracking, validTracking } from "@/lib/shipping";
+import { paySeller, recordDelivery } from "@/lib/fulfillment";
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await userFromRequest(request);
@@ -28,6 +28,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const address = order?.shipping_address as { line1?: string; line2?: string; city?: string; postal_code?: string; country?: string } | null;
   const shipTo = [order?.shipping_name, address?.line1, address?.line2, address?.city, address?.postal_code, address?.country].filter(Boolean).join(", ");
   const tracking = await lookupTracking(shipment.carrier, shipment.tracking_number);
+  const delivered = deliveryMoment(tracking);
+  if (delivered) await recordDelivery(shipment.id, delivered);
 
   return NextResponse.json({
     id: shipment.id,
