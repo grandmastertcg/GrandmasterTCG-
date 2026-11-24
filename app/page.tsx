@@ -27,7 +27,7 @@ export default function Home() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("checkout") === "success") setNotice("Payment received. A confirmation will follow by email.");
+    if (params.get("checkout") === "success") setNotice("Payment received. A receipt is on its way by email.");
     if (params.get("checkout") === "cancelled") setNotice("Checkout was cancelled. Your basket is unchanged.");
   }, []);
 
@@ -454,7 +454,7 @@ export default function Home() {
                   ))}
                 </ul>
                 <p className="mk-total"><span>{count} item{count === 1 ? "" : "s"}</span><strong>{gbp(total)}</strong></p>
-                <p className="mk-fine">GrandmasterTCG keeps {gbp(fee)} from this sale. That is 2% of each card, and never more than £100 per card. The seller also pays the card processing fee. Sellers are paid when you confirm the tracked parcel arrived, or 2 days after the courier shows it delivered, unless you dispute or request a refund.</p>
+                <p className="mk-fine">GrandmasterTCG keeps {gbp(fee)} from this sale. That is 2% of each card, and never more than £100 per card. The seller also pays the card processing fee. The seller must add tracking within 5 days. Sellers are paid when you confirm the tracked parcel arrived, or 2 days after the courier shows it delivered, unless you dispute or request a refund.</p>
                 <button className="mk-checkout" disabled={busy} onClick={checkout}>
                   {busy ? "Starting checkout…" : "Secure checkout"}
                 </button>

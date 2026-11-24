@@ -27,16 +27,16 @@ export default function TermsPage() {
       <p>Cards from different sellers in the same basket are paid for together, then split into one parcel per seller. Each parcel has its own tracking number, its own delivery, and its own payout. A problem with one parcel does not by itself change the others.</p>
 
       <h2>Selling a card</h2>
-      <p>You are not paid when the buyer checks out. The money stays with the shop’s Stripe account until the buyer presses “I received this”, or until 2 days after the courier shows the parcel was delivered. A tracking number on its own does not start the payout. You must connect a Stripe payout account from your account page before a payout can be sent. If you never connect Stripe, the payout waits until the account is ready.</p>
+      <p>You are not paid when the buyer checks out. The money stays with the shop’s Stripe account until the buyer presses “I received this”, or until 2 days after the courier shows the parcel was delivered. A tracking number on its own does not start the payout. You must connect a Stripe payout account from your account page before a payout can be sent. If you never connect Stripe, the payout waits until the account is ready. Stripe emails the buyer a receipt. The sale shows on your account as soon as the payment is confirmed, and the shop emails you the cards and the delivery address.</p>
       <p>A dispute or a refund request stops the payout. The shop reads the message. If the shop agrees, Stripe refunds the buyer for that parcel and you are not paid. If the shop decides the card was as listed, the request is closed and the normal payout rule applies.</p>
       <p>You can close a listing from your account while it is still unsold. A card that has already been paid for must still be posted. GrandmasterTCG can remove a listing that is misleading, not available, or breaks these terms.</p>
 
       <h2>What the listing must say</h2>
       <p>You can list Pokémon, Magic: The Gathering, Yu-Gi-Oh!, One Piece, Lorcana, or Other. The name, set, number, rarity, condition and price must describe the card you are sending. A raw card uses Near Mint, Excellent, Good, Played or Poor. A graded card uses PSA, BGS, CGC, ACE, SGC, TAG or Other, plus the grade, and the certificate number from the slab if it has one. A graded card is one slab, so the quantity is one. Do not mark a raw card as graded. Stock on a raw card is from 1 to 99. The price must be more than zero.</p>
-      <p>You can add a photo of the front and a photo of the back. Photos are optional. If you add them, they must be of the card in the listing, as a JPG, PNG or WebP under 4 MB each. You may list only cards you are allowed to sell.</p>
+      <p>Every listing needs a photo of the front and a photo of the back. The photos must be of the card in the listing, as a JPG, PNG or WebP under 4 MB each. You may list only cards you are allowed to sell.</p>
 
       <h2>Posting the card</h2>
-      <p>After the buyer pays, your account shows the UK address for that parcel, and the cards in it. Post only those cards. The buyer does not see that address on the tracking page. Every sale must be posted with tracking. You cannot mark a parcel posted without a tracking number. The couriers on the form are Royal Mail, Parcelforce, Evri, DPD, UPS, DHL, FedEx and Other. The number has to be the one for that parcel.</p>
+      <p>After the buyer pays, your account shows the UK address for that parcel, and the cards in it. Post only those cards. The buyer does not see that address on the tracking page. Add a tracking number within 5 days of the payment. You cannot mark a parcel posted without a tracking number. If those 5 days pass with no tracking number, the payout is held and the shop can refund the buyer. If you add tracking after that, the shop can release the payout and the normal payout rule applies. The couriers on the form are Royal Mail, Parcelforce, Evri, DPD, UPS, DHL, FedEx and Other. The number has to be the one for that parcel.</p>
       <p>Once the number is saved, you and the buyer can both open that parcel and follow where it is. Scans appear after the courier posts them, so a new number can stay blank for a while. You can also open the courier’s own tracker from that page.</p>
 
       <h2>Buying a card</h2>
@@ -47,7 +47,7 @@ export default function TermsPage() {
       <p>Some cards are sold by GrandmasterTCG rather than another member. Those sales still need tracking. The payment stays with the shop, because there is no separate seller to pay. A dispute or refund request on a shop parcel is handled in the same way.</p>
 
       <h2>What the shop keeps</h2>
-      <p>The shop keeps your display name, email, listings, photos, orders, tracking numbers, and the UK delivery name and address Stripe collects. That address is shown to the seller of the parcel so they can post it, and to the shop when the shop is the seller. Stripe handles the card payment. The shop does not show your card number on the account page.</p>
+      <p>The shop keeps your display name, email, listings, photos, orders, tracking numbers, and the UK delivery name and address Stripe collects. That address is shown to the seller of the parcel so they can post it, and to the shop when the shop is the seller. The seller’s sale email includes that address so they can post the card. Stripe handles the card payment and emails the buyer a receipt. The shop does not show your card number on the account page.</p>
 
       <p>These terms are governed by the laws of England and Wales.</p>
     </main>

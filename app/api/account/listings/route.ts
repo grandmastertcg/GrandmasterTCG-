@@ -68,8 +68,8 @@ export async function POST(request: NextRequest) {
     }
     const imageUrl = String(body.image_url ?? "").trim();
     const backImageUrl = String(body.back_image_url ?? "").trim();
-    if ((imageUrl && !ownCardPhoto(imageUrl)) || (backImageUrl && !ownCardPhoto(backImageUrl))) {
-      return NextResponse.json({ error: "Upload the card photos again." }, { status: 400 });
+    if (!imageUrl || !backImageUrl || !ownCardPhoto(imageUrl) || !ownCardPhoto(backImageUrl)) {
+      return NextResponse.json({ error: "Add a photo of the front and the back." }, { status: 400 });
     }
     if (cardNumber.length > 40 || rarity.length > 40) {
       return NextResponse.json({ error: "Card number or rarity is too long." }, { status: 400 });

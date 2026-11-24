@@ -183,11 +183,11 @@ function TransactionsScreen({
 
       <section className="desk-table">
         <h2>Refunds and disputes</h2>
-        <p>Read the buyer’s message. If the card did not arrive, or it is not the card they bought, refund them. Stripe sends that part of the payment back and the seller is not paid. If the card is fine, release the payout. The seller is then paid when the buyer confirms, or 2 days after the courier shows the parcel delivered.</p>
+        <p>Read the buyer’s message. If the card did not arrive, or it is not the card they bought, refund them. A parcel with no tracking number 5 days after payment is listed here as well, and you can refund that one too. Stripe sends that part of the payment back and the seller is not paid. If the card is fine, or the seller has now added tracking, release the payout. The seller is then paid when the buyer confirms, or 2 days after the courier shows the parcel delivered.</p>
         {requests.length === 0 ? <p className="desk-empty">No open refund or dispute requests.</p> : requests.map((request) => (
           <article key={request.id}>
             <div>
-              <strong>{request.kind === "refund" ? "Refund request" : "Dispute"}</strong>
+              <strong>{request.kind === "refund" ? "Refund request" : request.kind === "unposted" ? "Not posted in 5 days" : "Dispute"}</strong>
               <span>{request.email || "No email"} · seller {request.sellerName}</span>
               <span>{request.reason}</span>
               {request.trackingNumber && <span>{request.carrier} {request.trackingNumber}</span>}

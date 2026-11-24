@@ -4,6 +4,7 @@ alter table public.orders add column if not exists commission_pence integer not 
 alter table public.orders add column if not exists charge_id text;
 alter table public.orders add column if not exists stripe_fee_pence integer;
 alter table public.orders add column if not exists stock_adjusted boolean not null default false;
+alter table public.orders add column if not exists paid_at timestamptz;
 
 alter table public.order_items add column if not exists seller_id uuid;
 alter table public.order_items add column if not exists seller_name text;

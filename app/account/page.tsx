@@ -137,8 +137,9 @@ export default function AccountPage() {
     try {
       let imageUrl = "";
       let backImageUrl = "";
-      if (frontPhoto) imageUrl = await uploadPhoto(frontPhoto);
-      if (backPhoto) backImageUrl = await uploadPhoto(backPhoto);
+      if (!frontPhoto || !backPhoto) throw new Error("Add a photo of the front and the back.");
+      imageUrl = await uploadPhoto(frontPhoto);
+      backImageUrl = await uploadPhoto(backPhoto);
       const response = await fetch("/api/account/listings", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -203,6 +204,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
 
   function saleStatus(parcel: Parcel) {
     if (parcel.refundedAt) return "Refunded to the buyer.";
+    if (parcel.holdKind === "unposted") return "No tracking number within 5 days. The payout is held until the shop refunds the buyer or releases it.";
     if (parcel.holdKind === "refund") return `Buyer requested a refund. ${parcel.holdReason || ""}`;
     if (parcel.holdKind) return `Buyer opened a dispute. ${parcel.holdReason || ""}`;
     if (parcel.paid && parcel.receivedAt) return "Buyer received it. Paid out.";
@@ -210,7 +212,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
     if (parcel.receivedAt) return "Buyer received it. Payout pending.";
     if (parcel.deliveredAt) return `Courier shows this delivered. Pays on ${payOn(parcel.deliveredAt)} unless the buyer disputes or requests a refund.`;
     if (parcel.trackingNumber) return `Posted by ${parcel.carrier}: ${parcel.trackingNumber}. Paid when the buyer confirms, or 2 days after the courier shows it delivered.`;
-    return "Needs a tracking number";
+    return "Needs a tracking number within 5 days of payment.";
   }
 
   async function openHold(id: string) {
@@ -265,7 +267,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
       {message && <p className="join-error" role="status">{message}</p>}
       <section className="account-panel parcel-panel">
         <h2>Payouts and parcels</h2>
-        <p>Every sale must be posted with tracking. Once the number is saved, you and the buyer can both open Track parcel and follow where it is. Stripe pays the seller when the buyer presses “I received this”, or 2 days after the courier shows the parcel delivered. A dispute or refund request holds that payout until the shop decides it. Your 2% fee stays with the shop.</p>
+        <p>Every sale must be posted with tracking within 5 days of payment. If it is not, the payout is held and the shop can refund the buyer. Once the number is saved, you and the buyer can both open Track parcel and follow where it is. Stripe pays the seller when the buyer presses “I received this”, or 2 days after the courier shows the parcel delivered. A dispute or refund request holds that payout until the shop decides it. Your 2% fee stays with the shop.</p>
         <button type="button" onClick={connectPayouts}>{payoutsConnected ? "Open Stripe payouts" : "Set up Stripe payouts"}</button>
         <h3>Sales to post</h3>
         {sales.length === 0 ? <p>No paid sales waiting.</p> : sales.map((parcel) => (
@@ -298,7 +300,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
             <div>
               <strong>{parcel.items.map((item) => `${item.quantity} × ${item.name}`).join(", ") || "Cards"}</strong>
               <span>{parcel.sellerName} · {parcel.trackingNumber ? `${parcel.carrier} ${parcel.trackingNumber}` : "Waiting for tracking"}</span>
-              {parcel.refundedAt ? <span>Refunded to your card.</span> : parcel.holdKind ? <span>{parcel.holdKind === "refund" ? "Refund requested. The seller is not paid while the shop looks at this." : "Dispute open. The seller is not paid while the shop looks at this."} {parcel.holdReason}</span> : parcel.paid ? <span>{parcel.receivedAt ? "Received. The seller has been paid." : "The seller was paid 2 days after the courier showed it delivered."}</span> : parcel.deliveredAt && !parcel.receivedAt ? <span>The courier shows this delivered. The seller is paid on {payOn(parcel.deliveredAt)} unless you dispute or request a refund.</span> : parcel.trackingNumber && !parcel.receivedAt ? <span>The seller is paid when you confirm, or 2 days after the courier shows it delivered.</span> : null}
+              {parcel.refundedAt ? <span>Refunded to your card.</span> : parcel.holdKind === "unposted" ? <span>No tracking was added within 5 days. The shop can refund this parcel.</span> : parcel.holdKind ? <span>{parcel.holdKind === "refund" ? "Refund requested. The seller is not paid while the shop looks at this." : "Dispute open. The seller is not paid while the shop looks at this."} {parcel.holdReason}</span> : parcel.paid ? <span>{parcel.receivedAt ? "Received. The seller has been paid." : "The seller was paid 2 days after the courier showed it delivered."}</span> : parcel.deliveredAt && !parcel.receivedAt ? <span>The courier shows this delivered. The seller is paid on {payOn(parcel.deliveredAt)} unless you dispute or request a refund.</span> : parcel.trackingNumber && !parcel.receivedAt ? <span>The seller is paid when you confirm, or 2 days after the courier shows it delivered.</span> : <span>Waiting for tracking. The seller has 5 days from payment to add it.</span>}
             </div>
             {parcel.trackingNumber && <a href={`/account/parcels/${parcel.id}`}>Track parcel</a>}
             {!parcel.paid && !parcel.refundedAt && !parcel.holdKind && parcel.trackingNumber && !parcel.receivedAt && <button type="button" onClick={() => parcelAction(parcel.id, "receive")}>I received this</button>}
@@ -353,14 +355,14 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
             )}
             <div className="photo-pair">
               <label>Front
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+                <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
                   setFrontPhoto(file);
                   setFrontPreview(file ? URL.createObjectURL(file) : "");
                 }} />
               </label>
               <label>Back
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+                <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
                   setBackPhoto(file);
                   setBackPreview(file ? URL.createObjectURL(file) : "");

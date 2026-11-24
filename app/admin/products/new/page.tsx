@@ -13,6 +13,7 @@ export default function AddProductPage() {
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("1");
   const [imageUrl, setImageUrl] = useState("");
+  const [backImageUrl, setBackImageUrl] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 const [accessStatus, setAccessStatus] = useState<
@@ -91,6 +92,7 @@ const [accessStatus, setAccessStatus] = useState<
           price,
           stock: Number(stock),
           image_url: imageUrl,
+          back_image_url: backImageUrl,
         }),
       });
 
@@ -108,6 +110,7 @@ const [accessStatus, setAccessStatus] = useState<
       setPrice("");
       setStock("1");
       setImageUrl("");
+      setBackImageUrl("");
     } catch (err) {
       setMessage(
         err instanceof Error ? err.message : "Something went wrong."
@@ -260,13 +263,26 @@ if (accessStatus === "denied") {
           </label>
 
           <label style={labelStyle}>
-            Card Image URL
+            Front photo URL
             <input
               style={inputStyle}
               type="url"
               value={imageUrl}
               onChange={e => setImageUrl(e.target.value)}
-              placeholder="https://example.com/card.jpg"
+              placeholder="https://example.com/front.jpg"
+              required
+            />
+          </label>
+
+          <label style={labelStyle}>
+            Back photo URL
+            <input
+              style={inputStyle}
+              type="url"
+              value={backImageUrl}
+              onChange={e => setBackImageUrl(e.target.value)}
+              placeholder="https://example.com/back.jpg"
+              required
             />
           </label>
 

@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
       "condition",
       "price",
       "image_url",
+      "back_image_url",
     ];
 
     for (const field of fields) {
@@ -134,10 +135,18 @@ export async function POST(request: NextRequest) {
     }
 
     const imageUrl = body.image_url.trim();
+    const backImageUrl = body.back_image_url.trim();
 
-    if (imageUrl) {
+    if (!imageUrl || !backImageUrl) {
+      return NextResponse.json(
+        { error: "Add a front photo URL and a back photo URL." },
+        { status: 400 }
+      );
+    }
+
+    for (const photoUrl of [imageUrl, backImageUrl]) {
       try {
-        const parsed = new URL(imageUrl);
+        const parsed = new URL(photoUrl);
         if (
           parsed.protocol !== "https:" &&
           parsed.protocol !== "http:"
@@ -146,7 +155,7 @@ export async function POST(request: NextRequest) {
         }
       } catch {
         return NextResponse.json(
-          { error: "Enter a valid card image URL." },
+          { error: "Enter a valid front and back photo URL." },
           { status: 400 }
         );
       }
@@ -165,7 +174,8 @@ export async function POST(request: NextRequest) {
           condition,
           price_pence: pricePence,
           stock: body.stock,
-          image_url: imageUrl || null,
+          image_url: imageUrl,
+          back_image_url: backImageUrl,
         })
         .select("id")
         .single();

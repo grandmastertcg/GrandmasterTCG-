@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
+import { holdUnpostedSales } from "@/lib/fulfillment";
 
 async function requireAdmin(request: NextRequest) {
   const user = await userFromRequest(request);
@@ -13,6 +14,11 @@ export async function GET(request: NextRequest) {
   const admin = await requireAdmin(request);
   if (!admin) return NextResponse.json({ error: "Please sign in as the shop." }, { status: 401 });
 
+  try {
+    await holdUnpostedSales();
+  } catch {
+    // The list below still shows holds that were saved earlier.
+  }
   const db = supabaseAdmin();
   const { data: shipments, error } = await db.from("shipments").select("id,seller_id,seller_name,hold_kind,hold_reason,hold_at,proceeds_pence,commission_pence,stripe_fee_pence,carrier,tracking_number,order_id,orders!inner(customer_email,status)").not("hold_at", "is", null).is("refunded_at", null).eq("orders.status", "paid").order("hold_at", { ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

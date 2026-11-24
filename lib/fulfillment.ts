@@ -1,4 +1,5 @@
 import { commissionOnSale } from "@/lib/commission";
+import { sendSaleEmails } from "@/lib/mail";
 import { deliveryMoment, lookupTracking } from "@/lib/shipping";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
@@ -8,6 +9,7 @@ export function sellerKey(sellerId: string | null | undefined) {
 }
 
 const INSPECTION_MS = 2 * 24 * 60 * 60 * 1000;
+const POST_DEADLINE_MS = 5 * 24 * 60 * 60 * 1000;
 
 function payoutDue(shipment: { received_at: string | null; delivered_at: string | null; refunded_at?: string | null }) {
   if (shipment.refunded_at) return false;
@@ -17,9 +19,9 @@ function payoutDue(shipment: { received_at: string | null; delivered_at: string 
 }
 
 function holdMessage(kind: string | null) {
-  return kind === "refund"
-    ? "Payout is on hold because the buyer requested a refund."
-    : "Payout is on hold because the buyer opened a dispute.";
+  if (kind === "refund") return "Payout is on hold because the buyer requested a refund.";
+  if (kind === "unposted") return "Payout is on hold because this parcel was not posted within 5 days.";
+  return "Payout is on hold because the buyer opened a dispute.";
 }
 
 type CheckoutItem = { product_id: string; quantity: number };
@@ -115,15 +117,32 @@ export async function finalizeCheckout(sessionId: string) {
   }
 
   const shipping = session.shipping_details;
+  const paidAt = new Date().toISOString();
+  let justPaid = false;
   if (order.status !== "paid") {
-    const { error: updateError } = await db.from("orders").update({
+    const { data: updated, error: updateError } = await db.from("orders").update({
       status: "paid",
       charge_id: chargeId,
       customer_email: session.customer_details?.email ?? session.customer_email,
       shipping_name: shipping?.name ?? null,
-      shipping_address: shipping?.address ?? null
-    }).eq("id", order.id);
-    if (updateError) throw new Error(updateError.message);
+      shipping_address: shipping?.address ?? null,
+      paid_at: paidAt
+    }).eq("id", order.id).eq("status", "pending").select("id").maybeSingle();
+    if (updateError && /paid_at/.test(updateError.message)) {
+      const retry = await db.from("orders").update({
+        status: "paid",
+        charge_id: chargeId,
+        customer_email: session.customer_details?.email ?? session.customer_email,
+        shipping_name: shipping?.name ?? null,
+        shipping_address: shipping?.address ?? null
+      }).eq("id", order.id).eq("status", "pending").select("id").maybeSingle();
+      if (retry.error) throw new Error(retry.error.message);
+      justPaid = Boolean(retry.data);
+    } else if (updateError) {
+      throw new Error(updateError.message);
+    } else {
+      justPaid = Boolean(updated);
+    }
   } else if (chargeId) {
     await db.from("orders").update({ charge_id: chargeId }).eq("id", order.id).is("charge_id", null);
   }
@@ -141,6 +160,7 @@ export async function finalizeCheckout(sessionId: string) {
   }
 
   await applyStripeFee(order.id);
+  if (justPaid) await sendSaleEmails(order.id);
 }
 
 export async function paySeller(shipmentId: string) {
@@ -277,7 +297,53 @@ export async function releaseHold(shipmentId: string) {
   if (updateError) throw new Error(updateError.message);
 }
 
+function orderStart(order: { created_at?: string | null; paid_at?: string | null } | null) {
+  return order?.paid_at || order?.created_at || null;
+}
+
+export async function holdUnpostedSales() {
+  const db = supabaseAdmin();
+  const cutoff = Date.now() - POST_DEADLINE_MS;
+  const first = await db.from("shipments").select("id,orders!inner(status,created_at,paid_at)").is("tracking_number", null).is("hold_at", null).is("refunded_at", null).is("transfer_id", null).is("released_at", null).eq("orders.status", "paid");
+  const due: { id: string; started: string }[] = [];
+  if (first.error && /paid_at/.test(first.error.message)) {
+    const fallback = await db.from("shipments").select("id,orders!inner(status,created_at)").is("tracking_number", null).is("hold_at", null).is("refunded_at", null).is("transfer_id", null).is("released_at", null).eq("orders.status", "paid");
+    if (fallback.error) {
+      if (/hold_at|refunded_at|released_at/.test(fallback.error.message)) return;
+      throw new Error(fallback.error.message);
+    }
+    for (const shipment of fallback.data ?? []) {
+      const order = Array.isArray(shipment.orders) ? shipment.orders[0] : shipment.orders;
+      const started = orderStart(order);
+      if (started) due.push({ id: shipment.id, started });
+    }
+  } else if (first.error) {
+    if (/hold_at|refunded_at|released_at/.test(first.error.message)) return;
+    throw new Error(first.error.message);
+  } else {
+    for (const shipment of first.data ?? []) {
+      const order = Array.isArray(shipment.orders) ? shipment.orders[0] : shipment.orders;
+      const started = orderStart(order);
+      if (started) due.push({ id: shipment.id, started });
+    }
+  }
+  for (const shipment of due) {
+    if (new Date(shipment.started).getTime() > cutoff) continue;
+    await db.from("shipments").update({
+      hold_kind: "unposted",
+      hold_reason: "No tracking number was added within 5 days of payment.",
+      hold_at: new Date().toISOString(),
+      payout_error: holdMessage("unposted")
+    }).eq("id", shipment.id).is("tracking_number", null).is("hold_at", null);
+  }
+}
+
 export async function releaseDuePayouts() {
+  try {
+    await holdUnpostedSales();
+  } catch {
+    // A missed hold must not stop payouts that are already due.
+  }
   try {
     await noteDeliveries();
   } catch {
