@@ -15,8 +15,8 @@ export default function TermsPage() {
       <p>Each listing is your own offer. If someone else lists the same card, both listings stay on the market with their own price, condition, photos and seller. The buyer chooses one listing. You are paid only for the listing they buy.</p>
       <p>The price you set is the price the buyer pays, in pounds. GrandmasterTCG keeps 2% of each card, and never more than £100 on one card. Two copies mean the 2% is worked out on each copy. The buyer is not charged the 2% on top of your price.</p>
       <p>You also pay the card processing fee Stripe charges on the payment. That fee is Stripe’s real charge for the buyer’s card, not a fixed rate set by the shop. If the basket includes cards from more than one seller, the fee is split by each seller’s share of the order. Your payout is the sale price, minus the shop’s 2%, minus your share of that card fee. The amount you will receive before the card fee is shown when you set the price. The card fee is shown on the sale after the buyer has paid.</p>
-      <p>You are not paid when the buyer checks out. The money stays in the shop’s Stripe account until the buyer confirms the parcel arrived. You must connect a Stripe payout account from your account page before a payout can be sent. Stripe then pays your share to that account. If you never connect Stripe, the sale can still be marked delivered, but the payout waits until the account is ready.</p>
-      <p>There is no automatic payout if the buyer does not confirm delivery. Ask the buyer to open the order on their account and press “I received this” once the parcel is with them.</p>
+      <p>You are not paid when the buyer checks out. The money stays in the shop’s Stripe account until one of two things happens. The buyer presses “I received this”, and Stripe pays you then. Or 14 days pass after you added the tracking number, the buyer has not pressed that they received it, and they have not opened a dispute or requested a refund. Stripe pays you then. You must connect a Stripe payout account from your account page before a payout can be sent. If you never connect Stripe, the payout waits until the account is ready.</p>
+      <p>A dispute or a refund request stops the payout. It stays stopped while that request is open. The shop looks at the request. The shop does not send the card refund itself from this page.</p>
 
       <h2>Posting the card</h2>
       <p>Every sale must be posted with tracking. You cannot mark a parcel posted without a tracking number. The couriers on the form are Royal Mail, Parcelforce, Evri, DPD, UPS, DHL, FedEx and Other. The tracking number has to be the one for that parcel.</p>
@@ -29,7 +29,7 @@ export default function TermsPage() {
 
       <h2>Buying a card</h2>
       <p>You need an account to check out. You pay the listed price in pounds through Stripe. Stripe collects a UK delivery address. Sample cards on the shop, shown before live stock loads, cannot be bought.</p>
-      <p>When the seller adds tracking, it appears on your account. Press “I received this” only when that parcel has arrived and matches the listing. That confirmation is what releases the seller’s payout. It cannot be undone in the shop.</p>
+      <p>When the seller adds tracking, it appears on your account. Press “I received this” only when that parcel has arrived and matches the listing. That pays the seller straight away and cannot be undone in the shop. If you do nothing, the seller is paid 14 days after the tracking number was added. Open a dispute or request a refund before those 14 days if the parcel is missing, damaged, or not the card you bought. That holds the payout. Say what went wrong in the message.</p>
 
       <h2>The shop’s own cards</h2>
       <p>Some cards are sold by GrandmasterTCG rather than another member. Those sales still need tracking. The payment stays with the shop, because there is no separate seller to pay.</p>

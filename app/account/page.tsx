@@ -14,7 +14,10 @@ type Parcel = {
   shipTo?: string;
   carrier: string | null;
   trackingNumber: string | null;
+  shippedAt: string | null;
   receivedAt: string | null;
+  holdKind: string | null;
+  holdReason: string | null;
   proceedsPence: number;
   stripeFeePence?: number;
   paid: boolean;
@@ -42,6 +45,7 @@ export default function AccountPage() {
   const [purchases, setPurchases] = useState<Parcel[]>([]);
   const [payoutsConnected, setPayoutsConnected] = useState(false);
   const [tracking, setTracking] = useState<Record<string, { carrier: string; number: string }>>({});
+  const [holds, setHolds] = useState<Record<string, { kind: string; reason: string }>>({});
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [frontPhoto, setFrontPhoto] = useState<File | null>(null);
@@ -186,7 +190,28 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
       setMessage(body.error || "That parcel could not be updated.");
       return;
     }
-    setMessage(body.message || (action === "ship" ? "Tracking saved. The buyer can confirm delivery." : "Delivery confirmed."));
+    setMessage(body.message || (action === "ship" ? "Tracking saved. The buyer has 14 days to confirm, dispute or request a refund." : "Delivery confirmed."));
+    await refresh(token);
+  }
+
+  function payOn(shippedAt: string | null) {
+    if (!shippedAt) return "";
+    return new Date(new Date(shippedAt).getTime() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+  }
+
+  async function openHold(id: string) {
+    const entry = holds[id] ?? { kind: "dispute", reason: "" };
+    const response = await fetch(`/api/account/shipments/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "hold", kind: entry.kind, reason: entry.reason })
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      setMessage(body.error || "That request could not be saved.");
+      return;
+    }
+    setMessage(body.message || "The payout is on hold.");
     await refresh(token);
   }
 
@@ -226,7 +251,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
       {message && <p className="join-error" role="status">{message}</p>}
       <section className="account-panel parcel-panel">
         <h2>Payouts and parcels</h2>
-        <p>Every sale must be posted with tracking. Stripe pays the seller only after the buyer confirms the parcel arrived. Your 2% fee stays with the shop.</p>
+        <p>Every sale must be posted with tracking. Stripe pays the seller when the buyer presses “I received this”. If the buyer does not press that, and does not open a dispute or request a refund, the seller is paid 14 days after the tracking number was added. Your 2% fee stays with the shop.</p>
         <button type="button" onClick={connectPayouts}>{payoutsConnected ? "Open Stripe payouts" : "Set up Stripe payouts"}</button>
         <h3>Sales to post</h3>
         {sales.length === 0 ? <p>No paid sales waiting.</p> : sales.map((parcel) => (
@@ -234,7 +259,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
             <div>
               <strong>{parcel.items.map((item) => `${item.quantity} × ${item.name}`).join(", ") || "Cards"}</strong>
               {parcel.shipTo && <span>Ship to {parcel.shipTo}</span>}
-              <span>{parcel.receivedAt ? (parcel.paid ? "Buyer received it. Paid out." : "Buyer received it. Payout pending.") : parcel.trackingNumber ? `Posted by ${parcel.carrier}: ${parcel.trackingNumber}` : "Needs a tracking number"}</span>
+              <span>{parcel.holdKind ? (parcel.holdKind === "refund" ? `Buyer requested a refund. ${parcel.holdReason || ""}` : `Buyer opened a dispute. ${parcel.holdReason || ""}`) : parcel.paid ? (parcel.receivedAt ? "Buyer received it. Paid out." : "Paid out 14 days after tracking.") : parcel.receivedAt ? "Buyer received it. Payout pending." : parcel.trackingNumber ? `Posted by ${parcel.carrier}: ${parcel.trackingNumber}. Pays on ${payOn(parcel.shippedAt)} unless the buyer confirms, disputes or requests a refund.` : "Needs a tracking number"}</span>
               {parcel.payoutError && <span>{parcel.payoutError}</span>}
             </div>
             <div>
@@ -258,9 +283,20 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
             <div>
               <strong>{parcel.items.map((item) => `${item.quantity} × ${item.name}`).join(", ") || "Cards"}</strong>
               <span>{parcel.sellerName} · {parcel.trackingNumber ? `${parcel.carrier} ${parcel.trackingNumber}` : "Waiting for tracking"}</span>
+              {parcel.holdKind ? <span>{parcel.holdKind === "refund" ? "Refund requested. The seller is not paid while this is open." : "Dispute open. The seller is not paid while this is open."} {parcel.holdReason}</span> : parcel.paid ? <span>{parcel.receivedAt ? "Received. The seller has been paid." : "The seller was paid 14 days after tracking."}</span> : parcel.shippedAt && !parcel.receivedAt ? <span>If you do not confirm, dispute or request a refund, the seller is paid on {payOn(parcel.shippedAt)}.</span> : null}
             </div>
-            {parcel.trackingNumber && !parcel.receivedAt && <button type="button" onClick={() => parcelAction(parcel.id, "receive")}>I received this</button>}
-            {parcel.receivedAt && <span>Received</span>}
+            {!parcel.paid && !parcel.holdKind && parcel.trackingNumber && !parcel.receivedAt && <button type="button" onClick={() => parcelAction(parcel.id, "receive")}>I received this</button>}
+            {!parcel.paid && !parcel.holdKind && (
+              <form className="track-form" onSubmit={(event) => { event.preventDefault(); openHold(parcel.id); }}>
+                <select value={holds[parcel.id]?.kind ?? "dispute"} onChange={(event) => setHolds({ ...holds, [parcel.id]: { kind: event.target.value, reason: holds[parcel.id]?.reason ?? "" } })}>
+                  <option value="dispute">Dispute</option>
+                  <option value="refund">Refund</option>
+                </select>
+                <input placeholder="What is wrong with this order?" value={holds[parcel.id]?.reason ?? ""} onChange={(event) => setHolds({ ...holds, [parcel.id]: { kind: holds[parcel.id]?.kind ?? "dispute", reason: event.target.value } })} required minLength={8} maxLength={500} />
+                <button type="submit">Hold the payout</button>
+              </form>
+            )}
+            {parcel.receivedAt && !parcel.paid && !parcel.holdKind && <span>Received</span>}
           </article>
         ))}
       </section>

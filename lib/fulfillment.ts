@@ -6,6 +6,20 @@ export function sellerKey(sellerId: string | null | undefined) {
   return sellerId || "shop";
 }
 
+export const PAYOUT_WAIT_MS = 14 * 24 * 60 * 60 * 1000;
+
+function payoutDue(shipment: { received_at: string | null; shipped_at: string | null }) {
+  if (shipment.received_at) return true;
+  if (!shipment.shipped_at) return false;
+  return Date.now() - new Date(shipment.shipped_at).getTime() >= PAYOUT_WAIT_MS;
+}
+
+function holdMessage(kind: string | null) {
+  return kind === "refund"
+    ? "Payout is on hold because the buyer requested a refund."
+    : "Payout is on hold because the buyer opened a dispute.";
+}
+
 type CheckoutItem = { product_id: string; quantity: number };
 
 type ProductRow = {
@@ -129,14 +143,27 @@ export async function finalizeCheckout(sessionId: string) {
 
 export async function paySeller(shipmentId: string) {
   const db = supabaseAdmin();
-  const { data: shipment, error } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,received_at,transfer_id,order_id").eq("id", shipmentId).maybeSingle();
+  const { data: shipment, error } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,received_at,shipped_at,hold_at,hold_kind,transfer_id,released_at,order_id").eq("id", shipmentId).maybeSingle();
   if (error || !shipment) throw new Error(error?.message || "Shipment not found.");
-  if (!shipment.received_at || shipment.transfer_id || shipment.seller_key === "shop") return;
+  if (shipment.transfer_id || shipment.released_at) return;
+  if (shipment.hold_at) {
+    await db.from("shipments").update({ payout_error: holdMessage(shipment.hold_kind) }).eq("id", shipment.id);
+    return;
+  }
+  if (!payoutDue(shipment)) return;
+  if (shipment.seller_key === "shop") {
+    await db.from("shipments").update({ released_at: new Date().toISOString(), payout_error: null }).eq("id", shipment.id).is("released_at", null);
+    return;
+  }
   await applyStripeFee(shipment.order_id);
 
-  const { data: current, error: reloadError } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,transfer_id").eq("id", shipmentId).maybeSingle();
+  const { data: current, error: reloadError } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,hold_at,hold_kind,transfer_id,released_at").eq("id", shipmentId).maybeSingle();
   if (reloadError || !current) throw new Error(reloadError?.message || "Shipment not found.");
-  if (current.transfer_id || current.seller_key === "shop") return;
+  if (current.transfer_id || current.released_at || current.seller_key === "shop") return;
+  if (current.hold_at) {
+    await db.from("shipments").update({ payout_error: holdMessage(current.hold_kind) }).eq("id", current.id);
+    return;
+  }
   if (current.proceeds_pence <= 0) {
     if ((current.stripe_fee_pence ?? 0) > 0) {
       await db.from("shipments").update({ payout_error: "The card processing fee used this payout." }).eq("id", current.id);
@@ -161,7 +188,25 @@ export async function paySeller(shipmentId: string) {
     metadata: { shipment_id: current.id }
   }, { idempotencyKey: `shipment_${current.id}` });
 
-  await db.from("shipments").update({ transfer_id: transfer.id, payout_error: null }).eq("id", current.id);
+  await db.from("shipments").update({ transfer_id: transfer.id, released_at: new Date().toISOString(), payout_error: null }).eq("id", current.id);
+}
+
+export async function releaseDuePayouts() {
+  const db = supabaseAdmin();
+  const { data, error } = await db.from("shipments").select("id,received_at,shipped_at,hold_at,transfer_id,released_at").is("transfer_id", null).is("released_at", null).is("hold_at", null);
+  if (error) {
+    if (/released_at|hold_at/.test(error.message)) return;
+    throw new Error(error.message);
+  }
+  for (const shipment of data ?? []) {
+    if (!payoutDue(shipment)) continue;
+    try {
+      await paySeller(shipment.id);
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : "Stripe could not pay the seller yet.";
+      await db.from("shipments").update({ payout_error: message }).eq("id", shipment.id);
+    }
+  }
 }
 
 function splitPence(total: number, weights: number[]) {

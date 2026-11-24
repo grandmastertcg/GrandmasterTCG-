@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
 import { userFromRequest } from "@/lib/require-user";
-import { paySeller } from "@/lib/fulfillment";
+import { releaseDuePayouts } from "@/lib/fulfillment";
 
 export async function POST(request: NextRequest) {
   const user = await userFromRequest(request);
@@ -48,13 +48,10 @@ export async function POST(request: NextRequest) {
       link = await stripe.accountLinks.create(onboarding);
     }
 
-    const { data: waiting } = await db.from("shipments").select("id").eq("seller_id", user.id).not("received_at", "is", null).is("transfer_id", null);
-    for (const shipment of waiting ?? []) {
-      try {
-        await paySeller(shipment.id);
-      } catch {
-        // The seller can confirm again after Stripe finishes reviewing the account.
-      }
+    try {
+      await releaseDuePayouts();
+    } catch {
+      // Stripe can still be finishing the seller account. The next visit retries the payout.
     }
 
     return NextResponse.json({ url: link.url });

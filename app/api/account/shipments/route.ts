@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
+import { releaseDuePayouts } from "@/lib/fulfillment";
 
 export async function GET(request: NextRequest) {
   const user = await userFromRequest(request);
@@ -9,9 +10,15 @@ export async function GET(request: NextRequest) {
   const db = supabaseAdmin();
   const { data: admin } = await db.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
   const { data: payout } = await db.from("seller_payout_accounts").select("stripe_account_id").eq("user_id", user.id).maybeSingle();
+  await releaseDuePayouts();
 
-  const { data: shipments, error } = await db.from("shipments").select("id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,proceeds_pence,commission_pence,stripe_fee_pence,transfer_id,payout_error,created_at,orders!inner(id,buyer_id,status,created_at,shipping_name,shipping_address)").eq("orders.status", "paid").order("created_at", { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const { data: shipments, error } = await db.from("shipments").select("id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,hold_kind,hold_reason,hold_at,proceeds_pence,commission_pence,stripe_fee_pence,transfer_id,released_at,payout_error,created_at,orders!inner(id,buyer_id,status,created_at,shipping_name,shipping_address)").eq("orders.status", "paid").order("created_at", { ascending: false });
+  if (error) {
+    if (/hold_at|hold_kind|released_at/.test(error.message)) {
+      return NextResponse.json({ error: "Payout holds are not enabled in the database yet." }, { status: 500 });
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   const orderIds = [...new Set((shipments ?? []).map((shipment) => shipment.order_id))];
   const { data: items } = orderIds.length
@@ -35,10 +42,12 @@ export async function GET(request: NextRequest) {
       trackingNumber: shipment.tracking_number,
       shippedAt: shipment.shipped_at,
       receivedAt: shipment.received_at,
+      holdKind: shipment.hold_kind,
+      holdReason: shipment.hold_reason,
       proceedsPence: shipment.proceeds_pence,
       commissionPence: shipment.commission_pence,
       stripeFeePence: shipment.stripe_fee_pence ?? 0,
-      paid: Boolean(shipment.transfer_id) || (shipment.seller_key === "shop" && Boolean(shipment.received_at)),
+      paid: Boolean(shipment.transfer_id) || (shipment.seller_key === "shop" && Boolean(shipment.released_at || shipment.received_at)),
       payoutError: shipment.payout_error,
       createdAt: order?.created_at ?? shipment.created_at,
       items: related.map((item) => ({ name: item.product_name, quantity: item.quantity }))

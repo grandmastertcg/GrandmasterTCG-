@@ -14,7 +14,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   const body = await request.json();
   const action = String(body.action ?? "");
   const db = supabaseAdmin();
-  const { data: shipment } = await db.from("shipments").select("id,seller_id,seller_key,received_at,order_id").eq("id", id).maybeSingle();
+  const { data: shipment } = await db.from("shipments").select("id,seller_id,seller_key,received_at,transfer_id,released_at,order_id").eq("id", id).maybeSingle();
   if (!shipment) return NextResponse.json({ error: "Unknown parcel." }, { status: 404 });
 
   const { data: order } = await db.from("orders").select("buyer_id,status").eq("id", shipment.order_id).maybeSingle();
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const { data: admin } = await db.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
     const ownsSale = shipment.seller_id === user.id || (shipment.seller_key === "shop" && Boolean(admin));
     if (!ownsSale) return NextResponse.json({ error: "You can only ship your own sales." }, { status: 403 });
-    if (shipment.received_at) return NextResponse.json({ error: "This parcel has already been received." }, { status: 400 });
+    if (shipment.received_at || shipment.transfer_id || shipment.released_at) return NextResponse.json({ error: "This parcel has already been received." }, { status: 400 });
 
     const carrier = String(body.carrier ?? "");
     const trackingNumber = String(body.trackingNumber ?? "").trim();
@@ -44,10 +44,43 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "hold") {
+    if (order?.buyer_id !== user.id) return NextResponse.json({ error: "Only the buyer can open a dispute or request a refund." }, { status: 403 });
+    const kind = body.kind === "refund" ? "refund" : body.kind === "dispute" ? "dispute" : "";
+    if (!kind) return NextResponse.json({ error: "Choose a dispute or a refund." }, { status: 400 });
+    const reason = String(body.reason ?? "").trim();
+    if (reason.length < 8 || reason.length > 500) {
+      return NextResponse.json({ error: "Explain the problem in a short message." }, { status: 400 });
+    }
+    const { data: current } = await db.from("shipments").select("transfer_id,released_at,hold_at").eq("id", id).maybeSingle();
+    if (current?.transfer_id || current?.released_at) return NextResponse.json({ error: "The seller has already been paid." }, { status: 400 });
+    if (current?.hold_at) return NextResponse.json({ error: "This parcel is already on hold." }, { status: 400 });
+    const message = kind === "refund"
+      ? "Payout is on hold because the buyer requested a refund."
+      : "Payout is on hold because the buyer opened a dispute.";
+    const { error } = await db.from("shipments").update({
+      hold_kind: kind,
+      hold_reason: reason,
+      hold_at: new Date().toISOString(),
+      payout_error: message
+    }).eq("id", id).is("transfer_id", null).is("hold_at", null);
+    if (error) {
+      if (/hold_at|hold_kind|hold_reason/.test(error.message)) {
+        return NextResponse.json({ error: "Disputes and refunds are not enabled in the database yet." }, { status: 500 });
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({
+      ok: true,
+      message: kind === "refund" ? "Refund requested. The seller will not be paid while this is open." : "Dispute opened. The seller will not be paid while this is open."
+    });
+  }
+
   if (action === "receive") {
     if (order?.buyer_id !== user.id) return NextResponse.json({ error: "Only the buyer can confirm delivery." }, { status: 403 });
-    const { data: current } = await db.from("shipments").select("tracking_number,received_at").eq("id", id).maybeSingle();
+    const { data: current } = await db.from("shipments").select("tracking_number,received_at,hold_at").eq("id", id).maybeSingle();
     if (!current?.tracking_number) return NextResponse.json({ error: "This parcel has no tracking number yet." }, { status: 400 });
+    if (current.hold_at) return NextResponse.json({ error: "This parcel is on hold. Close the dispute or refund before confirming delivery." }, { status: 400 });
     if (!current.received_at) {
       const { error } = await db.from("shipments").update({ received_at: new Date().toISOString() }).eq("id", id);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
