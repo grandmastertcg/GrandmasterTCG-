@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
 import { CARRIERS, carrierTrackUrl, deliveryMoment, lookupTracking, validTracking } from "@/lib/shipping";
-import { paySeller, recordDelivery } from "@/lib/fulfillment";
+import { paySeller, recordDelivery, saveTracking } from "@/lib/fulfillment";
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await userFromRequest(request);
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
   const db = supabaseAdmin();
   const { data: admin } = await db.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
-  const { data: shipment } = await db.from("shipments").select("id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,orders!inner(buyer_id,status,shipping_name,shipping_address)").eq("id", id).maybeSingle();
+  const { data: shipment } = await db.from("shipments").select("id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,tracking_status,tracking_events,orders!inner(buyer_id,status,shipping_name,shipping_address)").eq("id", id).maybeSingle();
   if (!shipment) return NextResponse.json({ error: "Unknown parcel." }, { status: 404 });
 
   const order = Array.isArray(shipment.orders) ? shipment.orders[0] : shipment.orders;
@@ -28,8 +28,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const address = order?.shipping_address as { line1?: string; line2?: string; city?: string; postal_code?: string; country?: string } | null;
   const shipTo = [order?.shipping_name, address?.line1, address?.line2, address?.city, address?.postal_code, address?.country].filter(Boolean).join(", ");
   const tracking = await lookupTracking(shipment.carrier, shipment.tracking_number);
+  if (tracking) await saveTracking(shipment.id, tracking);
   const delivered = deliveryMoment(tracking);
   if (delivered) await recordDelivery(shipment.id, delivered);
+  const stored = Array.isArray(shipment.tracking_events) ? shipment.tracking_events : [];
 
   return NextResponse.json({
     id: shipment.id,
@@ -41,8 +43,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     shippedAt: shipment.shipped_at,
     receivedAt: shipment.received_at,
     courierUrl: carrierTrackUrl(shipment.carrier, shipment.tracking_number),
-    status: tracking?.status || "",
-    events: tracking?.events || [],
+    status: tracking?.status || shipment.tracking_status || "",
+    events: tracking?.events?.length ? tracking.events : stored,
     items: related.map((item) => ({ name: item.product_name, quantity: item.quantity }))
   });
 }

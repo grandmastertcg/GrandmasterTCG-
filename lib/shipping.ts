@@ -1,13 +1,25 @@
 export const CARRIERS = ["Royal Mail", "Parcelforce", "Evri", "DPD", "UPS", "DHL", "FedEx", "Other"] as const;
 
-const CARRIER_CODE: Record<string, string> = {
-  "Royal Mail": "royal-mail",
-  Parcelforce: "parcelforce",
-  Evri: "evri",
-  DPD: "dpd-uk",
-  UPS: "ups",
-  DHL: "dhl",
-  FedEx: "fedex"
+const CARRIER_CODE: Record<string, number> = {
+  "Royal Mail": 11031,
+  Parcelforce: 11033,
+  Evri: 100331,
+  DPD: 100010,
+  UPS: 100002,
+  DHL: 100001,
+  FedEx: 100003
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  InfoReceived: "The courier has the parcel details",
+  InTransit: "On its way",
+  Expired: "The courier stopped updating this number",
+  AvailableForPickup: "Ready to collect",
+  OutForDelivery: "Out for delivery",
+  DeliveryFailure: "The courier could not deliver it",
+  Delivered: "Delivered",
+  Exception: "The courier reported a problem",
+  NotFound: "The courier has no scan for this number yet"
 };
 
 export function validTracking(value: string) {
@@ -33,37 +45,51 @@ export type ParcelScan = {
   status: string;
 };
 
+type TrackEvent = {
+  time_iso?: string | null;
+  description?: string | null;
+  location?: string | null;
+  stage?: string | null;
+};
+
+async function trackRequest(path: string, body: unknown) {
+  const token = process.env.TRACK_17_TOKEN;
+  if (!token) return null;
+  const response = await fetch(`https://api.17track.net/track/v2.4/${path}`, {
+    method: "POST",
+    headers: { "17token": token, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!response.ok) return null;
+  return response.json() as Promise<{ data?: { accepted?: Array<{ track_info?: { latest_status?: { status?: string }; latest_event?: { time_iso?: string }; tracking?: { providers?: Array<{ events?: TrackEvent[] }> } } }> } }>;
+}
+
 export async function lookupTracking(carrier: string | null, trackingNumber: string) {
-  const key = process.env.LASTSCANNED_API_KEY;
-  if (!key) return null;
-  const url = new URL(`https://api.lastscanned.com/v1/track/${encodeURIComponent(trackingNumber.trim())}`);
-  const code = carrier ? CARRIER_CODE[carrier] : "";
-  if (code) url.searchParams.set("carrier", code);
-  try {
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${key}` },
-      cache: "no-store",
-      signal: AbortSignal.timeout(8000)
-    });
-    if (!response.ok) return null;
-    const body = await response.json();
-    const events: ParcelScan[] = Array.isArray(body.events)
-      ? body.events.map((event: { timestamp?: string; localTime?: string; description?: string; location?: string; status?: string }) => ({
-        time: event.localTime || event.timestamp || null,
-        description: String(event.description || "Scan"),
-        location: String(event.location || ""),
-        status: String(event.status || "")
-      }))
-      : [];
-    return {
-      status: String(body.statusDescription || body.status || ""),
-      delivered: events.some((event) => event.status === "delivered") || String(body.status || "").toLowerCase() === "delivered",
-      deliveredAt: events.find((event) => event.status === "delivered")?.time || null,
-      events
-    };
-  } catch {
-    return null;
-  }
+  const number = trackingNumber.trim();
+  const code = carrier ? CARRIER_CODE[carrier] : undefined;
+  const registered = await trackRequest("register", [code ? { number, carrier: code } : { number }]);
+  if (!registered && !process.env.TRACK_17_TOKEN) return null;
+  const info = await trackRequest("gettrackinfo", [code ? { number, carrier: code } : { number }]);
+  const accepted = info?.data?.accepted?.[0];
+  const track = accepted?.track_info;
+  const latest = String(track?.latest_status?.status || "");
+  const rawEvents: TrackEvent[] = (track?.tracking?.providers ?? []).flatMap((provider: { events?: TrackEvent[] }) => provider.events ?? []);
+  const events: ParcelScan[] = rawEvents.map((event) => ({
+    time: event.time_iso || null,
+    description: String(event.description || "Scan"),
+    location: String(event.location || ""),
+    status: String(event.stage || "").toLowerCase()
+  }));
+  events.sort((left, right) => new Date(right.time || 0).getTime() - new Date(left.time || 0).getTime());
+  const deliveredEvent = events.find((event) => event.status === "delivered");
+  return {
+    status: events[0]?.description || STATUS_LABEL[latest] || (process.env.TRACK_17_TOKEN ? "Waiting for the first courier scan" : ""),
+    delivered: latest === "Delivered" || Boolean(deliveredEvent),
+    deliveredAt: deliveredEvent?.time || (latest === "Delivered" ? track?.latest_event?.time_iso || null : null),
+    events
+  };
 }
 
 export function deliveryMoment(tracking: { delivered?: boolean; deliveredAt?: string | null; status: string; events: ParcelScan[] } | null) {

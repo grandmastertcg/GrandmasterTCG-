@@ -199,18 +199,32 @@ export async function recordDelivery(shipmentId: string, when: Date) {
   if (error && !/delivered_at/.test(error.message)) throw new Error(error.message);
 }
 
+export async function saveTracking(shipmentId: string, tracking: { status: string; events: { time: string | null; description: string; location: string; status: string }[] }) {
+  const db = supabaseAdmin();
+  const { error } = await db.from("shipments").update({
+    tracking_status: tracking.status,
+    tracking_events: tracking.events,
+    tracked_at: new Date().toISOString()
+  }).eq("id", shipmentId);
+  if (error && !/tracking_status|tracking_events|tracked_at/.test(error.message)) throw new Error(error.message);
+}
+
 export async function noteDeliveries() {
   const db = supabaseAdmin();
-  const { data, error } = await db.from("shipments").select("id,carrier,tracking_number").is("delivered_at", null).is("refunded_at", null).is("transfer_id", null).is("released_at", null).not("tracking_number", "is", null);
+  const { data, error } = await db.from("shipments").select("id,carrier,tracking_number,tracked_at").is("delivered_at", null).is("refunded_at", null).is("transfer_id", null).is("released_at", null).not("tracking_number", "is", null);
   if (error) {
-    if (/delivered_at|refunded_at/.test(error.message)) return;
+    if (/delivered_at|refunded_at|tracked_at/.test(error.message)) return;
     throw new Error(error.message);
   }
+  const fresh = Date.now() - 6 * 60 * 60 * 1000;
   for (const shipment of data ?? []) {
     if (!shipment.tracking_number) continue;
-    const when = deliveryMoment(await lookupTracking(shipment.carrier, shipment.tracking_number));
-    if (!when) continue;
-    await recordDelivery(shipment.id, when);
+    if (shipment.tracked_at && new Date(shipment.tracked_at).getTime() > fresh) continue;
+    const tracking = await lookupTracking(shipment.carrier, shipment.tracking_number);
+    if (!tracking) continue;
+    await saveTracking(shipment.id, tracking);
+    const when = deliveryMoment(tracking);
+    if (when) await recordDelivery(shipment.id, when);
   }
 }
 

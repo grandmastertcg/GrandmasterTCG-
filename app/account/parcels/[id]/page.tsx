@@ -84,7 +84,7 @@ export default function ParcelTrackingPage() {
             ))}
           </ol>
         ) : (
-          <p>The live scans are on the courier’s page for this tracking number. The same page is there for the buyer and the seller.</p>
+          <p>Scans show here after the courier posts them. The same page is there for the buyer and the seller. You can also open the courier’s own tracker.</p>
         )}
       </section>
       <section className="account-panel parcel-panel">
