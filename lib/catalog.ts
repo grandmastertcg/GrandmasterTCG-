@@ -20,17 +20,127 @@ export type Product = {
   cert_number?: string | null;
 };
 
-export const SALE_GAMES = ["Pokémon", "Magic: The Gathering", "Yu-Gi-Oh!", "One Piece", "Lorcana", "Other"] as const;
-export const SALE_CONDITIONS = ["Near Mint", "Excellent", "Good", "Played", "Poor"] as const;
-
-export const GAMES = [
-  "All games",
+export const SALE_GAMES = [
   "Pokémon",
   "Magic: The Gathering",
   "Yu-Gi-Oh!",
+  "Yu-Gi-Oh! Rush Duel",
   "One Piece",
-  "Lorcana"
+  "One Piece Carddass",
+  "Lorcana",
+  "Digimon",
+  "Dragon Ball Super",
+  "Flesh and Blood",
+  "Star Wars Unlimited",
+  "Weiss Schwarz",
+  "Union Arena",
+  "Riftbound",
+  "Gundam",
+  "Gundam Arsenal Base",
+  "Final Fantasy",
+  "MetaZoo",
+  "Elestrals",
+  "Cardfight!! Vanguard",
+  "Bakugan",
+  "Akora",
+  "Munchkin",
+  "Exodus",
+  "Dragoborne",
+  "Dice Masters",
+  "Chrono Clash System",
+  "Battle Spirits Saga",
+  "Argent Saga",
+  "Alpha Clash",
+  "Zombie World Order",
+  "World of Warcraft",
+  "WIXOSS",
+  "Warhammer",
+  "Universus",
+  "Transformers",
+  "The Caster Chronicles",
+  "Sorcery",
+  "Shadowverse",
+  "MetaX",
+  "Lightseeker",
+  "Kryptik",
+  "Hololive",
+  "Grand Archive",
+  "Godzilla",
+  "Gate Ruler",
+  "Future Card Buddyfight",
+  "Force of Will",
+  "Vibe TCG",
+  "Naruto Kayou",
+  "Naruto Mythos",
+  "Palworld",
+  "KPop Demon Hunters",
+  "My Little Pony Kayou",
+  "Austin Powers CCG",
+  "Cyberpunk TCG",
+  "Kayou Demon Slayer",
+  "Naruto CCG (2006-2013)",
+  "Other"
 ] as const;
+
+export const GAME_LANGUAGES: Partial<Record<(typeof SALE_GAMES)[number], readonly string[]>> = {
+  "Pokémon": ["English", "Japanese", "Chinese", "Korean", "French", "German"],
+  "Magic: The Gathering": ["English", "Japanese"],
+  "One Piece": ["English", "Japanese"],
+  "Lorcana": ["English", "Japanese"],
+  "Digimon": ["English", "Japanese"],
+  "Weiss Schwarz": ["English", "Japanese"],
+  "Palworld": ["English", "Japanese"]
+};
+
+export const POKEMON_LANGUAGES = GAME_LANGUAGES["Pokémon"]!;
+
+export function languagesFor(game: string) {
+  return GAME_LANGUAGES[game as keyof typeof GAME_LANGUAGES] ?? [];
+}
+
+export function cardLanguage(game: string, value: string | null | undefined) {
+  const options = languagesFor(game);
+  if (!options.length) return null;
+  return options.find((language) => language === value) ?? options[0];
+}
+
+export function pokemonLanguage(value: string | null | undefined) {
+  return cardLanguage("Pokémon", value) ?? "English";
+}
+
+const SHORT_GAME: Record<string, string> = {
+  "Magic: The Gathering": "Magic",
+  "Star Wars Unlimited": "Star Wars",
+  "Dragon Ball Super": "Dragon Ball",
+  "Yu-Gi-Oh! Rush Duel": "Rush Duel",
+  "One Piece Carddass": "Carddass",
+  "Cardfight!! Vanguard": "Vanguard",
+  "Chrono Clash System": "Chrono Clash",
+  "Battle Spirits Saga": "Battle Spirits",
+  "Zombie World Order": "Zombie World",
+  "World of Warcraft": "Warcraft",
+  "The Caster Chronicles": "Caster Chronicles",
+  "Future Card Buddyfight": "Buddyfight",
+  "Gundam Arsenal Base": "Arsenal Base",
+  "My Little Pony Kayou": "My Little Pony",
+  "KPop Demon Hunters": "KPop",
+  "Naruto CCG (2006-2013)": "Naruto CCG",
+  "Kayou Demon Slayer": "Demon Slayer",
+  "Austin Powers CCG": "Austin Powers",
+  "Cyberpunk TCG": "Cyberpunk"
+};
+
+export function gameLabel(game: string) {
+  return SHORT_GAME[game] ?? game;
+}
+
+export function sameListingLanguage(game: string, left: string | null | undefined, right: string | null | undefined) {
+  if (languagesFor(game).length <= 1) return true;
+  return cardLanguage(game, left) === cardLanguage(game, right);
+}
+export const SALE_CONDITIONS = ["Near Mint", "Excellent", "Good", "Played", "Poor"] as const;
+
+export const GAMES = ["All games", ...SALE_GAMES.filter((game) => game !== "Other"), "Other"] as const;
 
 export const CONDITIONS = ["Any condition", "Graded", "Near Mint", "Excellent", "Good", "Played", "Poor"] as const;
 

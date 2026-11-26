@@ -27,10 +27,11 @@ export async function saveBatchListings(cards: BatchCard[], owner: { userId: str
       active: true,
       seller_id: owner.userId,
       seller_name: owner.sellerName,
-      seller_business: owner.business
+      seller_business: owner.business,
+      language: card.language
     }));
     let { error } = await db.from("products").insert(chunk);
-    if (error && /seller_business|grader|grade|cert_number|back_image_url|seller_id|seller_name/.test(error.message)) {
+    if (error && /seller_business|grader|grade|cert_number|back_image_url|seller_id|seller_name|language/.test(error.message)) {
       const plain = chunk.map((card) => ({
         name: card.name,
         game: card.game,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CONDITIONS, GAMES, gameHue, gbp, type Product } from "@/lib/catalog";
+import { CONDITIONS, GAMES, cardLanguage, gameHue, gameLabel, gbp, languagesFor, sameListingLanguage, type Product } from "@/lib/catalog";
 import { commissionForLine } from "@/lib/commission";
 import { supabase } from "@/lib/supabase-browser";
 
@@ -29,6 +29,7 @@ export default function Home() {
   const [source, setSource] = useState<"loading" | "live" | "unavailable">("loading");
   const [q, setQ] = useState("");
   const [game, setGame] = useState<string>("All games");
+  const [language, setLanguage] = useState("Any language");
   const [condition, setCondition] = useState<string>("Any condition");
   const [rarity, setRarity] = useState("Any rarity");
   const [maxPounds, setMaxPounds] = useState("");
@@ -124,12 +125,13 @@ export default function Home() {
     const list = products.filter((product) => {
       if (product.stock <= 0) return false;
       if (game !== "All games" && product.game !== game) return false;
+      if (languagesFor(game).length > 1 && language !== "Any language" && cardLanguage(game, product.language) !== language) return false;
       if (condition === "Graded" && !product.grader) return false;
       if (condition !== "Any condition" && condition !== "Graded" && product.condition !== condition) return false;
       if (rarity !== "Any rarity" && (product.rarity || "Unspecified") !== rarity) return false;
       if (product.price_pence > maxPence) return false;
       if (!query) return true;
-      const haystack = [product.name, product.set_name, product.card_number, product.rarity, product.game, product.finish]
+      const haystack = [product.name, product.set_name, product.card_number, product.rarity, product.game, product.language, product.finish]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -142,12 +144,12 @@ export default function Home() {
       if (sort === "stock") return b.stock - a.stock;
       return a.price_pence - b.price_pence;
     });
-  }, [products, q, game, condition, rarity, maxPounds, sort]);
+  }, [products, q, game, language, condition, rarity, maxPounds, sort]);
 
   const selected = products.find((product) => product.id === selectedId) ?? null;
   const copies = selected
     ? products
-        .filter((product) => product.stock > 0 && product.name === selected.name && product.game === selected.game)
+        .filter((product) => product.stock > 0 && product.name === selected.name && product.game === selected.game && sameListingLanguage(product.game, product.language, selected.language))
         .sort((a, b) => a.price_pence - b.price_pence)
     : [];
 
@@ -161,7 +163,7 @@ export default function Home() {
     .slice(0, 4);
 
   function otherCopies(product: Product) {
-    return products.filter((item) => item.id !== product.id && item.stock > 0 && item.name === product.name && item.game === product.game).length;
+    return products.filter((item) => item.id !== product.id && item.stock > 0 && item.name === product.name && item.game === product.game && sameListingLanguage(product.game, item.language, product.language)).length;
   }
 
   function add(product: Product) {
@@ -184,6 +186,7 @@ export default function Home() {
   function resetFilters() {
     setQ("");
     setGame("All games");
+    setLanguage("Any language");
     setCondition("Any condition");
     setRarity("Any rarity");
     setMaxPounds("");
@@ -249,9 +252,12 @@ export default function Home() {
               role="tab"
               aria-selected={game === item}
               className={game === item ? "is-on" : ""}
-              onClick={() => setGame(item)}
+              onClick={() => {
+                setGame(item);
+                if (language !== "Any language" && !languagesFor(item).includes(language)) setLanguage("Any language");
+              }}
             >
-              {item === "Magic: The Gathering" ? "Magic" : item}
+              {gameLabel(item)}
             </button>
           ))}
         </div>
@@ -299,6 +305,15 @@ export default function Home() {
               <h2>Filters</h2>
               <button onClick={resetFilters}>Reset</button>
             </div>
+            {languagesFor(game).length > 1 && (
+              <label>
+                Language
+                <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+                  <option>Any language</option>
+                  {languagesFor(game).map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+            )}
             <label>
               Condition
               <select value={condition} onChange={(event) => setCondition(event.target.value)}>
@@ -375,7 +390,7 @@ export default function Home() {
                       <CardFace product={product} />
                       <div>
                         <strong>{product.name}</strong>
-                        <small className="mk-sub">{[product.rarity, product.finish, product.language].filter(Boolean).join(" · ") || product.game}</small>
+                        <small className="mk-sub">{[product.rarity, product.finish, languagesFor(product.game).length > 1 ? cardLanguage(product.game, product.language) : product.language].filter(Boolean).join(" · ") || product.game}</small>
                         <small>Sold by {product.seller_name || "GrandmasterTCG"} · {!product.seller_name || product.seller_business ? "Business seller" : "Private seller"}</small>
                         <small className="mk-mobile-meta">{product.condition}</small>
                         {otherCopies(product) > 0 && <em>{otherCopies(product)} other {otherCopies(product) === 1 ? "copy" : "copies"}</em>}
@@ -447,9 +462,9 @@ export default function Home() {
             <p className="mk-game">{selected.game}</p>
             <h2>{selected.name}</h2>
             <p className="mk-meta">
-              {[selected.set_name, selected.card_number, selected.rarity, selected.finish, selected.language].filter(Boolean).join(" · ")}
+              {[selected.set_name, selected.card_number, selected.rarity, selected.finish].filter(Boolean).join(" · ")}
             </p>
-            <p className="mk-meta">Sold by {selected.seller_name || "GrandmasterTCG"} · {!selected.seller_name || selected.seller_business ? "Business seller" : "Private seller"}</p>
+            <p className="mk-meta">Sold by {selected.seller_name || "GrandmasterTCG"} · {!selected.seller_name || selected.seller_business ? "Business seller" : "Private seller"}{languagesFor(selected.game).length > 1 ? ` · ${cardLanguage(selected.game, selected.language)}` : ""}</p>
             <p className="mk-fine">Postage to a UK address is included in the price. The seller has 5 days to add a tracking number. If they do not, you are refunded. If the card sells out before payment finishes, you are refunded. {!selected.seller_name || selected.seller_business ? "You can cancel for 14 days after the parcel arrives. You pay the return postage unless the card was not as listed." : "This is a private sale, so there is no 14-day cancellation. The card still has to match the listing."}</p>
             {selected.description && <p>{selected.description}</p>}
             <div className="mk-offer">

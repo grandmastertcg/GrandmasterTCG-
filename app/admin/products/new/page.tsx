@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase-browser";
+import { SALE_GAMES, languagesFor } from "@/lib/catalog";
 
 export default function AddProductPage() {
   const [name, setName] = useState("");
   const [game, setGame] = useState("Pokémon");
+  const [language, setLanguage] = useState("English");
   const [cardSet, setSetName] = useState("");
   const [cardNumber, setCardNumber] = useState("");
   const [rarity, setRarity] = useState("");
@@ -17,6 +19,7 @@ export default function AddProductPage() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [batchGame, setBatchGame] = useState("Pokémon");
+  const [batchLanguage, setBatchLanguage] = useState("English");
 const [accessStatus, setAccessStatus] = useState<
     "checking" | "allowed" | "denied"
   >("checking");
@@ -86,6 +89,7 @@ const [accessStatus, setAccessStatus] = useState<
         body: JSON.stringify({
           name,
           game,
+          language,
           set_name: cardSet,
           card_number: cardNumber,
           rarity,
@@ -179,16 +183,25 @@ if (accessStatus === "denied") {
             <select
               style={inputStyle}
               value={game}
-              onChange={e => setGame(e.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                const options = languagesFor(next);
+                setGame(next);
+                if (!options.includes(language)) setLanguage(options[0] ?? "English");
+              }}
             >
-              <option>Pokémon</option>
-              <option>Yu-Gi-Oh!</option>
-              <option>One Piece</option>
-              <option>Disney Lorcana</option>
-              <option>Magic: The Gathering</option>
-              <option>Other</option>
+              {SALE_GAMES.map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
+
+          {languagesFor(game).length > 1 && (
+            <label style={labelStyle}>
+              Language
+              <select style={inputStyle} value={language} onChange={(event) => setLanguage(event.target.value)}>
+                {languagesFor(game).map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+          )}
 
           <label style={labelStyle}>
             Set Name
@@ -326,6 +339,7 @@ if (accessStatus === "denied") {
               const body = new FormData();
               body.set("file", file);
               body.set("game", batchGame);
+              body.set("language", batchLanguage);
               const response = await fetch("/api/admin/products/batch", {
                 method: "POST",
                 headers: { Authorization: `Bearer ${data.session.access_token}` },
@@ -355,15 +369,23 @@ if (accessStatus === "denied") {
           </label>
           <label style={labelStyle}>
             Game when the file does not say
-            <select style={inputStyle} value={batchGame} onChange={(event) => setBatchGame(event.target.value)}>
-              <option>Pokémon</option>
-              <option>Yu-Gi-Oh!</option>
-              <option>One Piece</option>
-              <option>Disney Lorcana</option>
-              <option>Magic: The Gathering</option>
-              <option>Other</option>
+            <select style={inputStyle} value={batchGame} onChange={(event) => {
+              const next = event.target.value;
+              const options = languagesFor(next);
+              setBatchGame(next);
+              if (!options.includes(batchLanguage)) setBatchLanguage(options[0] ?? "English");
+            }}>
+              {SALE_GAMES.map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
+          {languagesFor(batchGame).length > 1 && (
+            <label style={labelStyle}>
+              Language when the file does not say
+              <select style={inputStyle} value={batchLanguage} onChange={(event) => setBatchLanguage(event.target.value)}>
+                {languagesFor(batchGame).map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+          )}
           <button type="submit" disabled={saving} style={{ background: "#f4c95d", color: "#111", padding: 16, border: 0, borderRadius: 6, fontWeight: "bold", cursor: "pointer" }}>
             {saving ? "Saving..." : "List this batch"}
           </button>

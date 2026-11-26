@@ -1,4 +1,4 @@
-import { SALE_GAMES } from "@/lib/catalog";
+import { SALE_GAMES, languagesFor } from "@/lib/catalog";
 import { GRADERS, GRADES, gradeLabel } from "@/lib/grades";
 
 export type BatchCard = {
@@ -15,6 +15,7 @@ export type BatchCard = {
   stock: number;
   image_url: string | null;
   back_image_url: string | null;
+  language: string | null;
 };
 
 export type BatchIssue = { row: number; message: string };
@@ -32,6 +33,7 @@ const BACK_KEYS = ["imageurl2", "backimageurl", "backimage", "image2"];
 const GRADER_KEYS = ["grader", "gradingcompany"];
 const GRADE_KEYS = ["grade"];
 const CERT_KEYS = ["certnumber", "certificatenumber", "certificationnumber", "cert"];
+const LANGUAGE_KEYS = ["language", "cardlanguage", "lang"];
 
 function normHeader(value: string) {
   return value.trim().toLowerCase().replace(/^\*/, "").replace(/^c:/, "").replace(/[^a-z0-9]/g, "");
@@ -102,14 +104,73 @@ function firstFilled(row: string[], indexes: number[]) {
   return "";
 }
 
+const GAME_RULES: [RegExp, string][] = [
+  [/pokemon|pokémon/, "Pokémon"],
+  [/rush duel/, "Yu-Gi-Oh! Rush Duel"],
+  [/one piece carddass/, "One Piece Carddass"],
+  [/gundam arsenal/, "Gundam Arsenal Base"],
+  [/naruto kayou/, "Naruto Kayou"],
+  [/naruto mythos/, "Naruto Mythos"],
+  [/naruto ccg/, "Naruto CCG (2006-2013)"],
+  [/kayou demon|demon slayer/, "Kayou Demon Slayer"],
+  [/k-?pop demon/, "KPop Demon Hunters"],
+  [/my little pony/, "My Little Pony Kayou"],
+  [/magic|gathering|\bmtg\b/, "Magic: The Gathering"],
+  [/yugioh|yu-gi-oh|yu gi oh/, "Yu-Gi-Oh!"],
+  [/one piece/, "One Piece"],
+  [/lorcana/, "Lorcana"],
+  [/digimon/, "Digimon"],
+  [/dragon ball/, "Dragon Ball Super"],
+  [/flesh and blood|\bfab\b/, "Flesh and Blood"],
+  [/star wars/, "Star Wars Unlimited"],
+  [/weiss|weiß/, "Weiss Schwarz"],
+  [/union arena/, "Union Arena"],
+  [/riftbound/, "Riftbound"],
+  [/gundam/, "Gundam"],
+  [/final fantasy/, "Final Fantasy"],
+  [/metazoo/, "MetaZoo"],
+  [/elestrals/, "Elestrals"],
+  [/vanguard/, "Cardfight!! Vanguard"],
+  [/bakugan/, "Bakugan"],
+  [/akora/, "Akora"],
+  [/munchkin/, "Munchkin"],
+  [/exodus/, "Exodus"],
+  [/dragoborne/, "Dragoborne"],
+  [/dice masters/, "Dice Masters"],
+  [/chrono clash/, "Chrono Clash System"],
+  [/battle spirits/, "Battle Spirits Saga"],
+  [/argent saga/, "Argent Saga"],
+  [/alpha clash/, "Alpha Clash"],
+  [/zombie world/, "Zombie World Order"],
+  [/warcraft/, "World of Warcraft"],
+  [/wixoss/, "WIXOSS"],
+  [/warhammer/, "Warhammer"],
+  [/universus|uni versus/, "Universus"],
+  [/transformers/, "Transformers"],
+  [/caster chronicles/, "The Caster Chronicles"],
+  [/sorcery/, "Sorcery"],
+  [/shadowverse/, "Shadowverse"],
+  [/metax/, "MetaX"],
+  [/lightseeker/, "Lightseeker"],
+  [/kryptik/, "Kryptik"],
+  [/hololive/, "Hololive"],
+  [/grand archive/, "Grand Archive"],
+  [/godzilla/, "Godzilla"],
+  [/gate ruler/, "Gate Ruler"],
+  [/buddyfight/, "Future Card Buddyfight"],
+  [/force of will/, "Force of Will"],
+  [/\bvibe\b/, "Vibe TCG"],
+  [/palworld/, "Palworld"],
+  [/austin powers/, "Austin Powers CCG"],
+  [/cyberpunk/, "Cyberpunk TCG"]
+];
+
 function mapGame(value: string, fallback: string) {
   const text = value.toLowerCase();
   if (!text || /^\d+$/.test(text)) return fallback;
-  if (/pokemon|pokémon/.test(text)) return "Pokémon";
-  if (/magic|gathering|\bmtg\b/.test(text)) return "Magic: The Gathering";
-  if (/yugioh|yu-gi-oh|yu gi oh/.test(text)) return "Yu-Gi-Oh!";
-  if (/one piece/.test(text)) return "One Piece";
-  if (/lorcana/.test(text)) return "Lorcana";
+  for (const [pattern, game] of GAME_RULES) {
+    if (pattern.test(text)) return game;
+  }
   const known = SALE_GAMES.find((game) => game.toLowerCase() === text);
   return known ?? "Other";
 }
@@ -126,6 +187,23 @@ function mapCondition(value: string) {
   if (/\b(lightly played|lightlyplayed|excellent)\b/.test(text) || /\blp\b/.test(text) || /\bex\b/.test(text)) return "Excellent";
   if (/\b(near mint|nearmint|mint|nm)\b/.test(text) || text === "new") return "Near Mint";
   return "";
+}
+
+function mapLanguage(value: string, gameText: string, fallbackGame: string, fallbackLanguage: string) {
+  const game = mapGame(gameText, fallbackGame);
+  const options = languagesFor(game);
+  if (!options.length) return null;
+  const blob = `${value} ${gameText}`.toLowerCase();
+  const fromText = /french/.test(blob) ? "French"
+    : /german/.test(blob) ? "German"
+    : /chinese/.test(blob) ? "Chinese"
+    : /korean/.test(blob) ? "Korean"
+    : /japan/.test(blob) ? "Japanese"
+    : /english/.test(blob) ? "English"
+    : "";
+  if (fromText && options.includes(fromText)) return fromText;
+  if (options.includes(fallbackLanguage)) return fallbackLanguage;
+  return options[0];
 }
 
 function pricePence(value: string) {
@@ -160,7 +238,7 @@ function slab(graderValue: string, gradeValue: string, conditionValue: string) {
   return { grader, grade };
 }
 
-export function parseBatchCsv(text: string, fallbackGame: string) {
+export function parseBatchCsv(text: string, fallbackGame: string, fallbackLanguage = "English") {
   const gameDefault = mapGame(fallbackGame, "Pokémon");
   const table = parseCsv(text);
   let headerIndex = -1;
@@ -190,6 +268,7 @@ export function parseBatchCsv(text: string, fallbackGame: string) {
   const graderAt = columns(headers, GRADER_KEYS);
   const gradeAt = columns(headers, GRADE_KEYS);
   const certAt = columns(headers, CERT_KEYS);
+  const languageAt = columns(headers, LANGUAGE_KEYS);
   const cards: BatchCard[] = [];
   const issues: BatchIssue[] = [];
 
@@ -249,7 +328,8 @@ export function parseBatchCsv(text: string, fallbackGame: string) {
       price_pence: pence,
       stock: graded ? 1 : stock,
       image_url: front,
-      back_image_url: extraBack || photos.back || null
+      back_image_url: extraBack || photos.back || null,
+      language: mapLanguage(firstFilled(row, languageAt), firstFilled(row, gameAt), gameDefault, fallbackLanguage)
     });
   }
 

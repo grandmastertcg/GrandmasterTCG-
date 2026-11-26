@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
-import { SALE_CONDITIONS, SALE_GAMES, gbp } from "@/lib/catalog";
+import { SALE_CONDITIONS, SALE_GAMES, cardLanguage, gbp, languagesFor } from "@/lib/catalog";
 import { commissionOnSale } from "@/lib/commission";
 import { CARRIERS } from "@/lib/shipping";
 import { GRADERS, GRADES } from "@/lib/grades";
@@ -37,6 +37,7 @@ type Listing = {
   stock: number;
   active: boolean;
   seller_business?: boolean | null;
+  language?: string | null;
 };
 
 const BASKET_KEY = "gmtcg-basket";
@@ -56,12 +57,13 @@ export default function AccountPage() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [batchGame, setBatchGame] = useState("Pokémon");
+  const [batchLanguage, setBatchLanguage] = useState("English");
   const [batchSelling, setBatchSelling] = useState("");
   const [frontPhoto, setFrontPhoto] = useState<File | null>(null);
   const [backPhoto, setBackPhoto] = useState<File | null>(null);
   const [frontPreview, setFrontPreview] = useState("");
   const [backPreview, setBackPreview] = useState("");
-  const [edits, setEdits] = useState<Record<string, { price: string; stock: string; condition: string; selling: string }>>({});
+  const [edits, setEdits] = useState<Record<string, { price: string; stock: string; condition: string; selling: string; language: string }>>({});
   const [form, setForm] = useState({
     name: "",
     game: "Pokémon",
@@ -75,7 +77,8 @@ export default function AccountPage() {
     cert_number: "",
     price: "",
     stock: "1",
-    seller_business: ""
+    seller_business: "",
+    language: "English"
   });
 
   useEffect(() => {
@@ -163,6 +166,7 @@ export default function AccountPage() {
       const body = new FormData();
       body.set("file", file);
       body.set("game", batchGame);
+      body.set("language", batchLanguage);
       body.set("seller_business", batchSelling);
       const response = await fetch("/api/account/listings/batch", {
         method: "POST",
@@ -219,7 +223,8 @@ export default function AccountPage() {
       price: (listing.price_pence / 100).toFixed(2),
       stock: String(listing.stock),
       condition: listing.condition,
-      selling: listing.seller_business ? "business" : "private"
+      selling: listing.seller_business ? "business" : "private",
+      language: cardLanguage(listing.game, listing.language) ?? "English"
     };
   }
 
@@ -235,7 +240,7 @@ export default function AccountPage() {
       const response = await fetch(`/api/account/listings/${listing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ price: draft.price, stock: Number(draft.stock), condition: draft.condition, seller_business: draft.selling })
+        body: JSON.stringify({ price: draft.price, stock: Number(draft.stock), condition: draft.condition, seller_business: draft.selling, language: draft.language })
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Listing could not be updated.");
@@ -426,10 +431,21 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
           <form className="sell-form" onSubmit={createListing}>
             <label>Card name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
             <label>Game
-              <select value={form.game} onChange={(event) => setForm({ ...form, game: event.target.value })}>
+              <select value={form.game} onChange={(event) => {
+                const game = event.target.value;
+                const options = languagesFor(game);
+                setForm({ ...form, game, language: options.includes(form.language) ? form.language : (options[0] ?? "English") });
+              }}>
                 {SALE_GAMES.map((game) => <option key={game}>{game}</option>)}
               </select>
             </label>
+            {languagesFor(form.game).length > 1 && (
+              <label>Language
+                <select value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })}>
+                  {languagesFor(form.game).map((language) => <option key={language}>{language}</option>)}
+                </select>
+              </label>
+            )}
             <label>Set<input value={form.set_name} onChange={(event) => setForm({ ...form, set_name: event.target.value })} required /></label>
             <label>Number<input value={form.card_number} onChange={(event) => setForm({ ...form, card_number: event.target.value })} /></label>
             <label>Rarity<input value={form.rarity} onChange={(event) => setForm({ ...form, rarity: event.target.value })} /></label>
@@ -492,10 +508,22 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
           <form className="sell-form" onSubmit={uploadBatch}>
             <label>CSV file<input name="batch" type="file" accept=".csv,text/csv" required /></label>
             <label>Game when the file does not say
-              <select value={batchGame} onChange={(event) => setBatchGame(event.target.value)}>
+              <select value={batchGame} onChange={(event) => {
+                const game = event.target.value;
+                const options = languagesFor(game);
+                setBatchGame(game);
+                if (!options.includes(batchLanguage)) setBatchLanguage(options[0] ?? "English");
+              }}>
                 {SALE_GAMES.map((game) => <option key={game}>{game}</option>)}
               </select>
             </label>
+            {languagesFor(batchGame).length > 1 && (
+              <label>Language when the file does not say
+                <select value={batchLanguage} onChange={(event) => setBatchLanguage(event.target.value)}>
+                  {languagesFor(batchGame).map((language) => <option key={language}>{language}</option>)}
+                </select>
+              </label>
+            )}
             <label>Who is selling
               <select value={batchSelling} onChange={(event) => setBatchSelling(event.target.value)} required>
                 <option value="">Choose</option>
@@ -512,12 +540,17 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
             <article className="my-listing" key={listing.id}>
               <div>
                 <strong>{listing.name}</strong>
-                <span>{listing.game} · {listing.condition} · {listing.seller_business ? "Business seller" : "Private seller"} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"} · you receive {gbp(listing.price_pence - commissionOnSale(listing.price_pence))}</span>
+                <span>{listing.game}{languagesFor(listing.game).length > 1 ? ` · ${cardLanguage(listing.game, listing.language)}` : ""} · {listing.condition} · {listing.seller_business ? "Business seller" : "Private seller"} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"} · you receive {gbp(listing.price_pence - commissionOnSale(listing.price_pence))}</span>
               </div>
               <div>
                 <b>{gbp(listing.price_pence)}</b>
                 {listing.active && (
                   <form className="track-form" onSubmit={(event) => { event.preventDefault(); saveListing(listing); }}>
+                    {languagesFor(listing.game).length > 1 && (
+                      <select aria-label={`Language for ${listing.name}`} value={listingDraft(listing).language} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), language: event.target.value } })}>
+                        {languagesFor(listing.game).map((language) => <option key={language}>{language}</option>)}
+                      </select>
+                    )}
                     <select aria-label={`Seller type for ${listing.name}`} value={listingDraft(listing).selling} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), selling: event.target.value } })}>
                       <option value="private">Private seller</option>
                       <option value="business">Business seller</option>

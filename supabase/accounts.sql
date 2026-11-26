@@ -2,3 +2,4 @@
 alter table public.products add column if not exists seller_id uuid;
 alter table public.products add column if not exists seller_name text;
 alter table public.products add column if not exists seller_business boolean not null default false;
+alter table public.products add column if not exists language text;

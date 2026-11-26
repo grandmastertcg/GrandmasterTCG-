@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
-import { SALE_CONDITIONS } from "@/lib/catalog";
+import { SALE_CONDITIONS, languagesFor } from "@/lib/catalog";
 
 function pricePence(price: string) {
   if (!/^\d{1,7}(\.\d{1,2})?$/.test(price)) return null;
@@ -25,12 +25,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (pence == null) return NextResponse.json({ error: "Enter a valid price in pounds." }, { status: 400 });
 
     const db = supabaseAdmin();
-    const loaded = await db.from("products").select("id,active,condition,grader,stock").eq("id", id).eq("seller_id", user.id).maybeSingle();
+    const loaded = await db.from("products").select("id,active,condition,grader,stock,game").eq("id", id).eq("seller_id", user.id).maybeSingle();
     let existing = loaded.data;
     if (loaded.error && /grader/.test(loaded.error.message)) {
       const fallback = await db.from("products").select("id,active,condition,stock").eq("id", id).eq("seller_id", user.id).maybeSingle();
       if (fallback.error) throw fallback.error;
-      existing = fallback.data ? { ...fallback.data, grader: null } : null;
+      existing = fallback.data ? { ...fallback.data, grader: null, game: "" } : null;
     } else if (loaded.error) {
       throw loaded.error;
     }
@@ -38,9 +38,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (!existing.active) return NextResponse.json({ error: "This listing has been removed." }, { status: 400 });
 
     const graded = Boolean(existing.grader) || !SALE_CONDITIONS.includes(existing.condition as (typeof SALE_CONDITIONS)[number]);
-    const update: { price_pence: number; stock?: number; condition?: string; seller_business?: boolean } = { price_pence: pence };
+    const update: { price_pence: number; stock?: number; condition?: string; seller_business?: boolean; language?: string } = { price_pence: pence };
     if (body.seller_business === "business" || body.seller_business === "private") {
       update.seller_business = body.seller_business === "business";
+    }
+    const languageOptions = languagesFor(String(existing.game ?? ""));
+    if (languageOptions.length > 1 && languageOptions.includes(String(body.language ?? ""))) {
+      update.language = String(body.language);
     }
     if (graded) {
       update.stock = 1;
@@ -58,9 +62,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     let saved = await db.from("products").update(update).eq("id", id).eq("seller_id", user.id).select("id").maybeSingle();
-    if (saved.error && /seller_business/.test(saved.error.message)) {
-      const { seller_business: _sellerBusiness, ...rest } = update;
-      saved = await db.from("products").update(rest).eq("id", id).eq("seller_id", user.id).select("id").maybeSingle();
+    if (saved.error && /seller_business|language/.test(saved.error.message)) {
+      const retryUpdate = { ...update };
+      if (/seller_business/.test(saved.error.message)) delete retryUpdate.seller_business;
+      if (/language/.test(saved.error.message)) delete retryUpdate.language;
+      saved = await db.from("products").update(retryUpdate).eq("id", id).eq("seller_id", user.id).select("id").maybeSingle();
     }
     if (saved.error) throw saved.error;
     const data = saved.data;

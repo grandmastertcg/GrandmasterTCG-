@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     if (file.size > 2_000_000) return NextResponse.json({ error: "That file is too large. Split it into smaller CSV files." }, { status: 400 });
     if (!/\.csv$|\.txt$/i.test(file.name)) return NextResponse.json({ error: "Save the batch as a CSV file." }, { status: 400 });
 
-    const parsed = parseBatchCsv(await file.text(), String(form.get("game") ?? "Pokémon"));
+    const parsed = parseBatchCsv(await file.text(), String(form.get("game") ?? "Pokémon"), String(form.get("language") ?? "English"));
     if (!parsed.cards.length) {
       const first = parsed.issues[0]?.message || "No cards in that file could be listed.";
       return NextResponse.json({ error: first, skipped: parsed.issues.slice(0, 20) }, { status: 400 });

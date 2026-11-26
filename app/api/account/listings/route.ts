@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sellerName, userFromRequest } from "@/lib/require-user";
-import { SALE_CONDITIONS, SALE_GAMES } from "@/lib/catalog";
+import { SALE_CONDITIONS, SALE_GAMES, languagesFor } from "@/lib/catalog";
 import { GRADERS, GRADES, gradeLabel } from "@/lib/grades";
 import { ownCardPhoto } from "@/lib/photos";
 
-const columns = "id,name,game,set_name,card_number,rarity,condition,grader,price_pence,stock,image_url,active,seller_business,created_at";
+const columns = "id,name,game,set_name,card_number,rarity,condition,grader,price_pence,stock,image_url,active,seller_business,language,created_at";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     const db = supabaseAdmin();
     const { data, error } = await db.from("products").select(columns).eq("seller_id", user.id).order("created_at", { ascending: false });
-    if (error && /grader|seller_business/.test(error.message)) {
+    if (error && /grader|seller_business|language/.test(error.message)) {
       const fallback = await db.from("products").select("id,name,game,set_name,card_number,rarity,condition,price_pence,stock,image_url,active,created_at").eq("seller_id", user.id).order("created_at", { ascending: false });
       if (fallback.error) throw fallback.error;
       return NextResponse.json({ listings: fallback.data ?? [] });
@@ -51,6 +51,11 @@ export async function POST(request: NextRequest) {
     }
     if (!SALE_GAMES.includes(game as (typeof SALE_GAMES)[number])) {
       return NextResponse.json({ error: "Choose a supported game." }, { status: 400 });
+    }
+    const languageOptions = languagesFor(game);
+    const language = languageOptions.find((item) => item === String(body.language ?? "").trim()) ?? null;
+    if (languageOptions.length > 1 && !language) {
+      return NextResponse.json({ error: `Choose a language for ${game}: ${languageOptions.join(", ")}.` }, { status: 400 });
     }
     if (graded) {
       grader = String(body.grader ?? "").trim();
@@ -110,13 +115,14 @@ export async function POST(request: NextRequest) {
         active: true,
         seller_id: user.id,
         seller_name: sellerName(user),
-        seller_business: selling === "business"
+        seller_business: selling === "business",
+        language
       })
       .select("id")
       .single();
 
     if (error) {
-      const missingColumn = /seller_id|seller_name|seller_business|grader|grade|cert_number|back_image_url/.test(error.message);
+      const missingColumn = /seller_id|seller_name|seller_business|grader|grade|cert_number|back_image_url|language/.test(error.message);
       return NextResponse.json(
         { error: missingColumn ? "Card photos and grades are not enabled in the database yet." : "Unable to save this listing." },
         { status: 500 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { languagesFor } from "@/lib/catalog";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST(request: NextRequest) {
@@ -177,11 +178,12 @@ export async function POST(request: NextRequest) {
           image_url: imageUrl,
           back_image_url: backImageUrl,
           seller_business: true,
+          language: languagesFor(game).find((language) => language === body.language) ?? languagesFor(game)[0] ?? null,
         })
         .select("id")
         .single();
 
-    if (insertError && /seller_business/.test(insertError.message)) {
+    if (insertError && /seller_business|language/.test(insertError.message)) {
       const retry = await supabase.from("products").insert({
         name,
         game,
