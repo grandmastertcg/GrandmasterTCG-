@@ -1,6 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
+import { SALE_CONDITIONS } from "@/lib/catalog";
+
+function pricePence(price: string) {
+  if (!/^\d{1,7}(\.\d{1,2})?$/.test(price)) return null;
+  const [pounds, pennies = ""] = price.split(".");
+  const pence = Number(pounds) * 100 + Number(pennies.padEnd(2, "0"));
+  return pence > 0 ? pence : null;
+}
+
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await userFromRequest(request);
+    if (!user) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
+
+    const { id } = await context.params;
+    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      return NextResponse.json({ error: "Unknown listing." }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const pence = pricePence(String(body.price ?? "").trim());
+    if (pence == null) return NextResponse.json({ error: "Enter a valid price in pounds." }, { status: 400 });
+
+    const db = supabaseAdmin();
+    const loaded = await db.from("products").select("id,active,condition,grader,stock").eq("id", id).eq("seller_id", user.id).maybeSingle();
+    let existing = loaded.data;
+    if (loaded.error && /grader/.test(loaded.error.message)) {
+      const fallback = await db.from("products").select("id,active,condition,stock").eq("id", id).eq("seller_id", user.id).maybeSingle();
+      if (fallback.error) throw fallback.error;
+      existing = fallback.data ? { ...fallback.data, grader: null } : null;
+    } else if (loaded.error) {
+      throw loaded.error;
+    }
+    if (!existing) return NextResponse.json({ error: "That listing is not yours." }, { status: 404 });
+    if (!existing.active) return NextResponse.json({ error: "This listing has been removed." }, { status: 400 });
+
+    const graded = Boolean(existing.grader) || !SALE_CONDITIONS.includes(existing.condition as (typeof SALE_CONDITIONS)[number]);
+    const update: { price_pence: number; stock?: number; condition?: string } = { price_pence: pence };
+    if (graded) {
+      update.stock = 1;
+    } else {
+      const stock = Number(body.stock);
+      const condition = String(body.condition ?? "").trim();
+      if (!SALE_CONDITIONS.includes(condition as (typeof SALE_CONDITIONS)[number])) {
+        return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
+      }
+      if (!Number.isInteger(stock) || stock < 1 || stock > 99) {
+        return NextResponse.json({ error: "Stock must be between 1 and 99." }, { status: 400 });
+      }
+      update.stock = stock;
+      update.condition = condition;
+    }
+
+    const { data, error } = await db.from("products").update(update).eq("id", id).eq("seller_id", user.id).select("id").maybeSingle();
+    if (error) throw error;
+    if (!data) return NextResponse.json({ error: "That listing is not yours." }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to update this listing.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {

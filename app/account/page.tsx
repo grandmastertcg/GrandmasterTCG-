@@ -31,10 +31,13 @@ type Listing = {
   name: string;
   game: string;
   condition: string;
+  grader?: string | null;
   price_pence: number;
   stock: number;
   active: boolean;
 };
+
+const BASKET_KEY = "gmtcg-basket";
 
 export default function AccountPage() {
   const router = useRouter();
@@ -54,6 +57,7 @@ export default function AccountPage() {
   const [backPhoto, setBackPhoto] = useState<File | null>(null);
   const [frontPreview, setFrontPreview] = useState("");
   const [backPreview, setBackPreview] = useState("");
+  const [edits, setEdits] = useState<Record<string, { price: string; stock: string; condition: string }>>({});
   const [form, setForm] = useState({
     name: "",
     game: "Pokémon",
@@ -86,11 +90,12 @@ export default function AccountPage() {
       }
       const sessionId = new URLSearchParams(window.location.search).get("session_id");
       if (sessionId) {
-        await fetch("/api/checkout/confirm", {
+        const confirmed = await fetch("/api/checkout/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
           body: JSON.stringify({ sessionId })
         });
+        if (confirmed.ok) localStorage.removeItem(BASKET_KEY);
       }
       await refresh(session.access_token);
       setReady(true);
@@ -156,6 +161,44 @@ export default function AccountPage() {
       await refresh(token);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Listing could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function listingDraft(listing: Listing) {
+    return edits[listing.id] ?? {
+      price: (listing.price_pence / 100).toFixed(2),
+      stock: String(listing.stock),
+      condition: listing.condition
+    };
+  }
+
+  function rawListing(listing: Listing) {
+    return !listing.grader && SALE_CONDITIONS.includes(listing.condition as (typeof SALE_CONDITIONS)[number]);
+  }
+
+  async function saveListing(listing: Listing) {
+    const draft = listingDraft(listing);
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/account/listings/${listing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ price: draft.price, stock: Number(draft.stock), condition: draft.condition })
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Listing could not be updated.");
+      setEdits((current) => {
+        const next = { ...current };
+        delete next[listing.id];
+        return next;
+      });
+      setMessage("Listing updated.");
+      await refresh(token);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Listing could not be updated.");
     } finally {
       setSaving(false);
     }
@@ -389,7 +432,21 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
               </div>
               <div>
                 <b>{gbp(listing.price_pence)}</b>
-                {listing.active && <button type="button" onClick={() => removeListing(listing.id)}>Remove</button>}
+                {listing.active && (
+                  <form className="track-form" onSubmit={(event) => { event.preventDefault(); saveListing(listing); }}>
+                    <input inputMode="decimal" aria-label={`Price for ${listing.name}`} value={listingDraft(listing).price} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), price: event.target.value } })} />
+                    {rawListing(listing) && (
+                      <>
+                        <select aria-label={`Condition for ${listing.name}`} value={listingDraft(listing).condition} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), condition: event.target.value } })}>
+                          {SALE_CONDITIONS.map((condition) => <option key={condition}>{condition}</option>)}
+                        </select>
+                        <input type="number" min={1} max={99} aria-label={`Quantity for ${listing.name}`} value={listingDraft(listing).stock} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), stock: event.target.value } })} />
+                      </>
+                    )}
+                    <button className="listing-save" type="submit" disabled={saving}>Save</button>
+                    <button type="button" onClick={() => removeListing(listing.id)}>Remove</button>
+                  </form>
+                )}
               </div>
             </article>
           ))}

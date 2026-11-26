@@ -1,5 +1,5 @@
 import { commissionOnSale } from "@/lib/commission";
-import { sendSaleEmails } from "@/lib/mail";
+import { sendDeliveredEmail, sendSaleEmails } from "@/lib/mail";
 import { deliveryMoment, lookupTracking } from "@/lib/shipping";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
@@ -215,8 +215,9 @@ export async function paySeller(shipmentId: string) {
 
 export async function recordDelivery(shipmentId: string, when: Date) {
   const db = supabaseAdmin();
-  const { error } = await db.from("shipments").update({ delivered_at: when.toISOString() }).eq("id", shipmentId).is("delivered_at", null);
+  const { data, error } = await db.from("shipments").update({ delivered_at: when.toISOString() }).eq("id", shipmentId).is("delivered_at", null).select("id").maybeSingle();
   if (error && !/delivered_at/.test(error.message)) throw new Error(error.message);
+  if (data) await sendDeliveredEmail(shipmentId);
 }
 
 export async function saveTracking(shipmentId: string, tracking: { status: string; events: { time: string | null; description: string; location: string; status: string }[] }) {

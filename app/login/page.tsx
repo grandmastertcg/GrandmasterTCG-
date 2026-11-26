@@ -28,7 +28,8 @@ export default function LoginPage() {
       }
       const access = await fetch("/api/admin/check", { headers: { Authorization: `Bearer ${token}` } });
       const body = access.ok ? await access.json() : { admin: false };
-      router.push(body.admin ? "/admin" : "/account");
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.push(next === "/" ? "/?basket=saved" : body.admin ? "/admin" : "/account");
     } catch {
       setMessage("Login failed. Check your configuration.");
     } finally {

@@ -7,6 +7,23 @@ import { supabase } from "@/lib/supabase-browser";
 
 type SortKey = "price-asc" | "price-desc" | "name" | "stock";
 
+const BASKET_KEY = "gmtcg-basket";
+
+function readBasket() {
+  try {
+    const saved = localStorage.getItem(BASKET_KEY);
+    if (!saved) return {};
+    const parsed = JSON.parse(saved) as Record<string, unknown>;
+    const next: Record<string, number> = {};
+    for (const [id, qty] of Object.entries(parsed)) {
+      if (typeof qty === "number" && qty > 0 && qty < 100) next[id] = Math.floor(qty);
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>(demoCatalog);
   const [source, setSource] = useState<"sample" | "live">("sample");
@@ -19,6 +36,7 @@ export default function Home() {
   const [view, setView] = useState<"list" | "grid">("list");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [cartReady, setCartReady] = useState(false);
   const [basketOpen, setBasketOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -29,6 +47,9 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("checkout") === "success") setNotice("Payment received. A receipt is on its way by email.");
     if (params.get("checkout") === "cancelled") setNotice("Checkout was cancelled. Your basket is unchanged.");
+    if (params.get("basket") === "saved") setNotice("You are signed in. Your basket is still here.");
+    setCart(readBasket());
+    setCartReady(true);
   }, []);
 
   useEffect(() => {
@@ -51,6 +72,26 @@ export default function Home() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!cartReady) return;
+    if (source !== "live") {
+      localStorage.setItem(BASKET_KEY, JSON.stringify(cart));
+      return;
+    }
+    const next: Record<string, number> = {};
+    for (const [id, qty] of Object.entries(cart)) {
+      const product = products.find((item) => item.id === id);
+      if (!product || product.stock <= 0) continue;
+      next[id] = Math.min(qty, product.stock);
+    }
+    const same = Object.keys(next).length === Object.keys(cart).length && Object.entries(next).every(([id, qty]) => cart[id] === qty);
+    if (!same) {
+      setCart(next);
+      return;
+    }
+    localStorage.setItem(BASKET_KEY, JSON.stringify(next));
+  }, [cart, cartReady, source, products]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -150,7 +191,7 @@ export default function Home() {
     try {
       const session = (await supabase.auth.getSession()).data.session;
       if (!session) {
-        window.location.href = "/login";
+        window.location.href = "/login?next=/";
         return;
       }
       const items = Object.entries(cart)

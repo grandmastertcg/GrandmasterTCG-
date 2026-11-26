@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { releaseDuePayouts } from "@/lib/fulfillment";
+import { remindUnpostedSales } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export async function GET(request: NextRequest) {
   if (!bearer && !scheduled) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
+  await remindUnpostedSales();
   await releaseDuePayouts();
   return NextResponse.json({ ok: true });
 }

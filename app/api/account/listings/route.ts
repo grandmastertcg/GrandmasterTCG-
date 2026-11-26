@@ -5,19 +5,20 @@ import { SALE_CONDITIONS, SALE_GAMES } from "@/lib/catalog";
 import { GRADERS, GRADES, gradeLabel } from "@/lib/grades";
 import { ownCardPhoto } from "@/lib/photos";
 
-const columns = "id,name,game,set_name,card_number,rarity,condition,price_pence,stock,image_url,active,created_at";
+const columns = "id,name,game,set_name,card_number,rarity,condition,grader,price_pence,stock,image_url,active,created_at";
 
 export async function GET(request: NextRequest) {
   try {
     const user = await userFromRequest(request);
     if (!user) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
 
-    const { data, error } = await supabaseAdmin()
-      .from("products")
-      .select(columns)
-      .eq("seller_id", user.id)
-      .order("created_at", { ascending: false });
-
+    const db = supabaseAdmin();
+    const { data, error } = await db.from("products").select(columns).eq("seller_id", user.id).order("created_at", { ascending: false });
+    if (error && /grader/.test(error.message)) {
+      const fallback = await db.from("products").select("id,name,game,set_name,card_number,rarity,condition,price_pence,stock,image_url,active,created_at").eq("seller_id", user.id).order("created_at", { ascending: false });
+      if (fallback.error) throw fallback.error;
+      return NextResponse.json({ listings: fallback.data ?? [] });
+    }
     if (error) throw error;
     return NextResponse.json({ listings: data ?? [] });
   } catch (error) {

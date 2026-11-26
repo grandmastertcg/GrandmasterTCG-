@@ -238,6 +238,7 @@ img.mk-face { background: #edf1f5; }
 .mk-cond small { display: block; font-weight: 650; color: var(--muted); }
 .my-listing button { background: transparent; color: #8d3b32; border: 0; padding: 0; font-weight: 800; }
 .parcel-panel .my-listing button, .track-form button { background: var(--navy); color: white; padding: 8px 10px; border-radius: 8px; }
+.my-listing .listing-save { background: var(--navy); color: white; border: 0; border-radius: 8px; padding: 8px 10px; }
 .join-error { color: #8d3b32; }
 @media (max-width: 800px) { .account-grid, .account-top { display: grid; grid-template-columns: 1fr; } }
 

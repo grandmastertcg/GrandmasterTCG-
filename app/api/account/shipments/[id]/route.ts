@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
 import { CARRIERS, carrierTrackUrl, deliveryMoment, lookupTracking, validTracking } from "@/lib/shipping";
 import { paySeller, recordDelivery, saveTracking } from "@/lib/fulfillment";
+import { sendHoldEmail, sendTrackingEmail } from "@/lib/mail";
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await userFromRequest(request);
@@ -80,12 +81,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ error: "Enter a tracking number. Every parcel must be tracked." }, { status: 400 });
     }
 
+    const { data: before } = await db.from("shipments").select("tracking_number").eq("id", id).maybeSingle();
     const { error } = await db.from("shipments").update({
       carrier,
       tracking_number: trackingNumber,
       shipped_at: new Date().toISOString()
     }).eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!before?.tracking_number) await sendTrackingEmail(id);
     return NextResponse.json({ ok: true });
   }
 
@@ -115,6 +118,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    await sendHoldEmail(id);
     return NextResponse.json({
       ok: true,
       message: kind === "refund" ? "Refund requested. The seller will not be paid while this is open." : "Dispute opened. The seller will not be paid while this is open."
