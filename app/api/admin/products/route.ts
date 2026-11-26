@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     const name = body.name.trim();
     const game = body.game.trim();
     const setName = body.set_name.trim();
-    const condition = saleCondition(body.condition.trim());
+    const condition = saleCondition(body.condition.trim(), game);
     if (!condition) {
       return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
     }

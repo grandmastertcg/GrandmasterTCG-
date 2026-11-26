@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase-browser";
-import { SALE_CONDITIONS, SALE_GAMES, languagesFor } from "@/lib/catalog";
+import { SALE_GAMES, conditionsFor, languagesFor } from "@/lib/catalog";
 
 export default function AddProductPage() {
   const [name, setName] = useState("");
@@ -188,6 +188,7 @@ if (accessStatus === "denied") {
                 const options = languagesFor(next);
                 setGame(next);
                 if (!options.includes(language)) setLanguage(options[0] ?? "English");
+                if (!conditionsFor(next).includes(condition)) setCondition("Near Mint (NM)");
               }}
             >
               {SALE_GAMES.map((item) => <option key={item}>{item}</option>)}
@@ -241,7 +242,7 @@ if (accessStatus === "denied") {
               value={condition}
               onChange={e => setCondition(e.target.value)}
             >
-              {SALE_CONDITIONS.map((item) => <option key={item}>{item}</option>)}
+              {conditionsFor(game).map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
 

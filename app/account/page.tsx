@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
-import { SALE_CONDITIONS, SALE_GAMES, cardLanguage, conditionLabel, gbp, languagesFor, saleCondition } from "@/lib/catalog";
+import { POKEMON_NOTES, SALE_GAMES, cardLanguage, conditionLabel, conditionNote, conditionsFor, gbp, languagesFor, saleCondition } from "@/lib/catalog";
 import { commissionOnSale } from "@/lib/commission";
 import { CARRIERS } from "@/lib/shipping";
 import { GRADERS, GRADES } from "@/lib/grades";
@@ -63,7 +63,7 @@ export default function AccountPage() {
   const [backPhoto, setBackPhoto] = useState<File | null>(null);
   const [frontPreview, setFrontPreview] = useState("");
   const [backPreview, setBackPreview] = useState("");
-  const [edits, setEdits] = useState<Record<string, { price: string; stock: string; condition: string; selling: string; language: string }>>({});
+  const [edits, setEdits] = useState<Record<string, { price: string; stock: string; condition: string; condition_note: string; selling: string; language: string }>>({});
   const [form, setForm] = useState({
     name: "",
     game: "Pokémon",
@@ -71,6 +71,7 @@ export default function AccountPage() {
     card_number: "",
     rarity: "",
     condition: "Near Mint (NM)",
+    condition_note: "",
     graded: false,
     grader: "PSA",
     grade: "10",
@@ -222,7 +223,8 @@ export default function AccountPage() {
     return edits[listing.id] ?? {
       price: (listing.price_pence / 100).toFixed(2),
       stock: String(listing.stock),
-      condition: conditionLabel(listing.condition),
+      condition: saleCondition(listing.condition, listing.game) ?? conditionLabel(listing.condition),
+      condition_note: conditionNote(listing.condition),
       selling: listing.seller_business ? "business" : "private",
       language: cardLanguage(listing.game, listing.language) ?? "English"
     };
@@ -240,7 +242,7 @@ export default function AccountPage() {
       const response = await fetch(`/api/account/listings/${listing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ price: draft.price, stock: Number(draft.stock), condition: draft.condition, seller_business: draft.selling, language: draft.language })
+        body: JSON.stringify({ price: draft.price, stock: Number(draft.stock), condition: draft.condition, condition_note: draft.condition_note, seller_business: draft.selling, language: draft.language })
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Listing could not be updated.");
@@ -434,7 +436,14 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
               <select value={form.game} onChange={(event) => {
                 const game = event.target.value;
                 const options = languagesFor(game);
-                setForm({ ...form, game, language: options.includes(form.language) ? form.language : (options[0] ?? "English") });
+                const conditions = conditionsFor(game);
+                setForm({
+                  ...form,
+                  game,
+                  language: options.includes(form.language) ? form.language : (options[0] ?? "English"),
+                  condition: conditions.includes(form.condition) ? form.condition : "Near Mint (NM)",
+                  condition_note: game === "Pokémon" ? form.condition_note : ""
+                });
               }}>
                 {SALE_GAMES.map((game) => <option key={game}>{game}</option>)}
               </select>
@@ -463,11 +472,19 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
                   </select>
                 </label>
                 <label>Certificate number<input value={form.cert_number} onChange={(event) => setForm({ ...form, cert_number: event.target.value })} placeholder="From the slab label" /></label>
+                {form.game === "Pokémon" && (
+                  <label>Condition
+                    <select value={form.condition_note} onChange={(event) => setForm({ ...form, condition_note: event.target.value })}>
+                      <option value="">Graded condition only</option>
+                      {POKEMON_NOTES.map((condition) => <option key={condition}>{condition}</option>)}
+                    </select>
+                  </label>
+                )}
               </>
             ) : (
               <label>Condition
                 <select value={form.condition} onChange={(event) => setForm({ ...form, condition: event.target.value })}>
-                  {SALE_CONDITIONS.map((condition) => <option key={condition}>{condition}</option>)}
+                  {conditionsFor(form.game).map((condition) => <option key={condition}>{condition}</option>)}
                 </select>
               </label>
             )}
@@ -559,10 +576,16 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
                     {rawListing(listing) && (
                       <>
                         <select aria-label={`Condition for ${listing.name}`} value={listingDraft(listing).condition} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), condition: event.target.value } })}>
-                          {SALE_CONDITIONS.map((condition) => <option key={condition}>{condition}</option>)}
+                          {conditionsFor(listing.game).map((condition) => <option key={condition}>{condition}</option>)}
                         </select>
                         <input type="number" min={1} max={99} aria-label={`Quantity for ${listing.name}`} value={listingDraft(listing).stock} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), stock: event.target.value } })} />
                       </>
+                    )}
+                    {!rawListing(listing) && listing.game === "Pokémon" && (
+                      <select aria-label={`Condition for ${listing.name}`} value={listingDraft(listing).condition_note} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), condition_note: event.target.value } })}>
+                        <option value="">Graded condition only</option>
+                        {POKEMON_NOTES.map((condition) => <option key={condition}>{condition}</option>)}
+                      </select>
                     )}
                     <button className="listing-save" type="submit" disabled={saving}>Save</button>
                     <button type="button" onClick={() => removeListing(listing.id)}>Remove</button>

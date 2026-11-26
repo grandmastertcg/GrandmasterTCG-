@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
-import { languagesFor, saleCondition } from "@/lib/catalog";
+import { conditionNote, languagesFor, saleCondition, withConditionNote } from "@/lib/catalog";
 
 function pricePence(price: string) {
   if (!/^\d{1,7}(\.\d{1,2})?$/.test(price)) return null;
@@ -48,9 +48,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
     if (graded) {
       update.stock = 1;
+      if (existing.game === "Pokémon" && body.condition_note !== undefined) {
+        const note = String(body.condition_note ?? "").trim();
+        if (note && !conditionNote(note)) return NextResponse.json({ error: "Choose Off Centre (OC) or Misprint/Error card." }, { status: 400 });
+        update.condition = withConditionNote(String(existing.condition ?? ""), note);
+      }
     } else {
       const stock = Number(body.stock);
-      const condition = saleCondition(String(body.condition ?? ""));
+      const condition = saleCondition(String(body.condition ?? ""), String(existing.game ?? ""));
       if (!condition) {
         return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
       }

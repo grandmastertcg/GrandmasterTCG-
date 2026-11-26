@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CONDITIONS, GAMES, cardLanguage, gameHue, gameLabel, gbp, languagesFor, sameListingLanguage, type Product } from "@/lib/catalog";
+import { CONDITIONS, GAMES, POKEMON_NOTES, cardLanguage, conditionNote, gameHue, gameLabel, gbp, languagesFor, sameListingLanguage, type Product } from "@/lib/catalog";
 import { commissionForLine } from "@/lib/commission";
 import { supabase } from "@/lib/supabase-browser";
 
@@ -127,7 +127,7 @@ export default function Home() {
       if (game !== "All games" && product.game !== game) return false;
       if (languagesFor(game).length > 1 && language !== "Any language" && cardLanguage(game, product.language) !== language) return false;
       if (condition === "Graded" && !product.grader) return false;
-      if (condition !== "Any condition" && condition !== "Graded" && product.condition !== condition) return false;
+      if (condition !== "Any condition" && condition !== "Graded" && product.condition !== condition && conditionNote(product.condition) !== condition) return false;
       if (rarity !== "Any rarity" && (product.rarity || "Unspecified") !== rarity) return false;
       if (product.price_pence > maxPence) return false;
       if (!query) return true;
@@ -255,6 +255,7 @@ export default function Home() {
               onClick={() => {
                 setGame(item);
                 if (language !== "Any language" && !languagesFor(item).includes(language)) setLanguage("Any language");
+                if ((POKEMON_NOTES as readonly string[]).includes(condition) && item !== "Pokémon" && item !== "All games") setCondition("Any condition");
               }}
             >
               {gameLabel(item)}
@@ -317,7 +318,7 @@ export default function Home() {
             <label>
               Condition
               <select value={condition} onChange={(event) => setCondition(event.target.value)}>
-                {CONDITIONS.map((item) => <option key={item}>{item}</option>)}
+                {(game === "Pokémon" || game === "All games" ? [...CONDITIONS, ...POKEMON_NOTES] : CONDITIONS).map((item) => <option key={item}>{item}</option>)}
               </select>
             </label>
             <label>
@@ -400,7 +401,7 @@ export default function Home() {
                       <span>{product.set_name || "Set not listed"}</span>
                       <small>{product.card_number || product.game}</small>
                     </div>
-                    <div className={`mk-cond cond-${product.condition.split(" ")[0].toLowerCase()}`}>
+                    <div className={`mk-cond cond-${product.condition.split(" ")[0].toLowerCase().replace(/[^a-z]/g, "")}`}>
                       {product.condition}
                       {product.cert_number && <small>Cert {product.cert_number}</small>}
                     </div>

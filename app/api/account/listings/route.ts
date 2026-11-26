@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sellerName, userFromRequest } from "@/lib/require-user";
-import { SALE_GAMES, conditionLabel, languagesFor, saleCondition } from "@/lib/catalog";
+import { SALE_GAMES, conditionLabel, conditionNote, languagesFor, saleCondition, withConditionNote } from "@/lib/catalog";
 import { GRADERS, GRADES, gradeLabel } from "@/lib/grades";
 import { ownCardPhoto } from "@/lib/photos";
 
@@ -68,9 +68,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Enter the certificate number from the slab." }, { status: 400 });
       }
       condition = gradeLabel(grader, grade);
+      if (game === "Pokémon" && String(body.condition_note ?? "").trim()) {
+        const note = conditionNote(String(body.condition_note));
+        if (!note) return NextResponse.json({ error: "Choose Off Centre (OC) or Misprint/Error card." }, { status: 400 });
+        condition = withConditionNote(condition, note);
+      }
       stock = 1;
     } else {
-      const chosen = saleCondition(condition);
+      const chosen = saleCondition(condition, game);
       if (!chosen) return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
       condition = chosen;
     }

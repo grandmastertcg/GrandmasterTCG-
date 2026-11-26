@@ -175,16 +175,26 @@ function mapGame(value: string, fallback: string) {
   return known ?? "Other";
 }
 
-function mapCondition(value: string) {
+function pokemonNote(value: string) {
+  const text = value.toLowerCase();
+  if (/misprint|error card/.test(text)) return "Misprint/Error card";
+  if (/off[\s-]?cent(?:re|er)|\boc\b/.test(text)) return "Off Centre (OC)";
+  return "";
+}
+
+function mapCondition(value: string, game: string) {
   const text = value.toLowerCase().replace(/[()]/g, " ");
   if (!text.trim()) return "";
-  if (/\b(dmg|damaged|poor)\b/.test(text)) return "Damaged (DMG)";
-  if (/\b(heavily played|heavilyplayed)\b/.test(text) || /\bhp\b/.test(text)) return "Heavily Played (HP)";
-  if (/\b(moderately played|moderatelyplayed)\b/.test(text) || /\bmp\b/.test(text) || /\bgood\b/.test(text)) return "Moderately Played (MP)";
-  if (/\b(lightly played|lightlyplayed|excellent)\b/.test(text) || /\blp\b/.test(text)) return "Lightly Played (LP)";
-  if (/\b(near mint|nearmint)\b/.test(text) || /\bnm\b/.test(text) || /\bmint\b/.test(text) || text.trim() === "new") return "Near Mint (NM)";
-  if (/\bplayed\b/.test(text)) return "Heavily Played (HP)";
-  return "";
+  const note = game === "Pokémon" ? pokemonNote(value) : "";
+  const wear = /\b(dmg|damaged|poor)\b/.test(text) ? "Damaged (DMG)"
+    : /\b(heavily played|heavilyplayed)\b/.test(text) || /\bhp\b/.test(text) ? "Heavily Played (HP)"
+    : /\b(moderately played|moderatelyplayed)\b/.test(text) || /\bmp\b/.test(text) || /\bgood\b/.test(text) ? "Moderately Played (MP)"
+    : /\b(lightly played|lightlyplayed|excellent)\b/.test(text) || /\blp\b/.test(text) ? "Lightly Played (LP)"
+    : /\b(near mint|nearmint)\b/.test(text) || /\bnm\b/.test(text) || /\bmint\b/.test(text) || text.trim() === "new" ? "Near Mint (NM)"
+    : /\bplayed\b/.test(text) ? "Heavily Played (HP)"
+    : "";
+  if (note && !wear) return note;
+  return wear;
 }
 
 function mapLanguage(value: string, gameText: string, fallbackGame: string, fallbackLanguage: string) {
@@ -306,8 +316,13 @@ export function parseBatchCsv(text: string, fallbackGame: string, fallbackLangua
       stock = 99;
       issues.push({ row: line, message: `${name} was listed with 99 copies. A listing holds at most 99.` });
     }
-    const graded = slab(firstFilled(row, graderAt), firstFilled(row, gradeAt), firstFilled(row, conditionAt));
-    const condition = graded ? gradeLabel(graded.grader, graded.grade) : mapCondition(firstFilled(row, conditionAt)) || (!conditionAt.length ? "Near Mint (NM)" : "");
+    const game = mapGame(firstFilled(row, gameAt), gameDefault);
+    const conditionText = firstFilled(row, conditionAt);
+    const graded = slab(firstFilled(row, graderAt), firstFilled(row, gradeAt), conditionText);
+    const note = game === "Pokémon" ? pokemonNote(conditionText) : "";
+    const condition = graded
+      ? `${gradeLabel(graded.grader, graded.grade)}${note ? ` · ${note}` : ""}`
+      : mapCondition(conditionText, game) || (!conditionAt.length ? "Near Mint (NM)" : "");
     if (!condition) {
       issues.push({ row: line, message: `${name} has a condition this shop does not use.` });
       continue;
@@ -315,7 +330,7 @@ export function parseBatchCsv(text: string, fallbackGame: string, fallbackLangua
     const cert = firstFilled(row, certAt).replace(/\s/g, "");
     cards.push({
       name: name.slice(0, 120),
-      game: mapGame(firstFilled(row, gameAt), gameDefault),
+      game,
       set_name: (firstFilled(row, setAt) || "Unknown set").slice(0, 120),
       card_number: firstFilled(row, numberAt).slice(0, 40),
       rarity: firstFilled(row, rarityAt).slice(0, 40),

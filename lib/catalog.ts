@@ -139,6 +139,7 @@ export function sameListingLanguage(game: string, left: string | null | undefine
   return cardLanguage(game, left) === cardLanguage(game, right);
 }
 export const SALE_CONDITIONS = ["Near Mint (NM)", "Lightly Played (LP)", "Moderately Played (MP)", "Heavily Played (HP)", "Damaged (DMG)"] as const;
+export const POKEMON_NOTES = ["Off Centre (OC)", "Misprint/Error card"] as const;
 
 const LEGACY_CONDITIONS: Record<string, (typeof SALE_CONDITIONS)[number]> = {
   "Near Mint": "Near Mint (NM)",
@@ -152,10 +153,28 @@ const LEGACY_CONDITIONS: Record<string, (typeof SALE_CONDITIONS)[number]> = {
   Damaged: "Damaged (DMG)"
 };
 
-export function saleCondition(value: string | null | undefined) {
+export function conditionsFor(game: string): string[] {
+  return game === "Pokémon" ? [...SALE_CONDITIONS, ...POKEMON_NOTES] : [...SALE_CONDITIONS];
+}
+
+export function conditionNote(value: string | null | undefined) {
+  const text = (value ?? "").trim();
+  return POKEMON_NOTES.find((note) => text === note || text.endsWith(` · ${note}`)) ?? "";
+}
+
+export function withConditionNote(base: string, note: string | null | undefined) {
+  const chosen = conditionNote(note);
+  const plain = base.replace(/ · (Off Centre \(OC\)|Misprint\/Error card)$/, "");
+  return chosen ? `${plain} · ${chosen}` : plain;
+}
+
+export function saleCondition(value: string | null | undefined, game?: string) {
   const text = (value ?? "").trim();
   if ((SALE_CONDITIONS as readonly string[]).includes(text)) return text;
-  return LEGACY_CONDITIONS[text] ?? null;
+  if (LEGACY_CONDITIONS[text]) return LEGACY_CONDITIONS[text];
+  if ((POKEMON_NOTES as readonly string[]).includes(text) && game !== "Pokémon" && game != null) return null;
+  if ((POKEMON_NOTES as readonly string[]).includes(text)) return text;
+  return null;
 }
 
 export function conditionLabel(value: string | null | undefined) {
