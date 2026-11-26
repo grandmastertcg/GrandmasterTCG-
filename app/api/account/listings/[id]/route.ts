@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
-import { SALE_CONDITIONS, languagesFor } from "@/lib/catalog";
+import { languagesFor, saleCondition } from "@/lib/catalog";
 
 function pricePence(price: string) {
   if (!/^\d{1,7}(\.\d{1,2})?$/.test(price)) return null;
@@ -37,7 +37,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (!existing) return NextResponse.json({ error: "That listing is not yours." }, { status: 404 });
     if (!existing.active) return NextResponse.json({ error: "This listing has been removed." }, { status: 400 });
 
-    const graded = Boolean(existing.grader) || !SALE_CONDITIONS.includes(existing.condition as (typeof SALE_CONDITIONS)[number]);
+    const graded = Boolean(existing.grader) || !saleCondition(existing.condition);
     const update: { price_pence: number; stock?: number; condition?: string; seller_business?: boolean; language?: string } = { price_pence: pence };
     if (body.seller_business === "business" || body.seller_business === "private") {
       update.seller_business = body.seller_business === "business";
@@ -50,8 +50,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       update.stock = 1;
     } else {
       const stock = Number(body.stock);
-      const condition = String(body.condition ?? "").trim();
-      if (!SALE_CONDITIONS.includes(condition as (typeof SALE_CONDITIONS)[number])) {
+      const condition = saleCondition(String(body.condition ?? ""));
+      if (!condition) {
         return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
       }
       if (!Number.isInteger(stock) || stock < 1 || stock > 99) {

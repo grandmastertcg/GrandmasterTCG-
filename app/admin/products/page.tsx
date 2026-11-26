@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { conditionLabel } from "@/lib/catalog";
 import { supabase } from "../../../lib/supabase-browser";
 
 type Product = {
@@ -125,7 +126,7 @@ function ProductEditor({
       <h2>{product.name}</h2>
       <p>Game: {product.game}</p>
       <p>Set: {product.set_name || "-"}</p>
-      <p>Condition: {product.condition || "-"}</p>
+      <p>Condition: {conditionLabel(product.condition) || "-"}</p>
 
       <label style={{ display: "block", marginTop: 16 }}>
         Price (£)

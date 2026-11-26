@@ -98,9 +98,9 @@ a { color: inherit; }
 .mk-mobile-meta { display: none; }
 .mk-cond { font-weight: 800; font-size: 13px; }
 .cond-near { color: var(--green); }
-.cond-excellent { color: #0b6b86; }
-.cond-good { color: #8a5a12; }
-.cond-played, .cond-poor { color: #8d3b32; }
+.cond-lightly, .cond-excellent { color: #0b6b86; }
+.cond-moderately, .cond-good { color: #8a5a12; }
+.cond-heavily, .cond-damaged, .cond-played, .cond-poor { color: #8d3b32; }
 .mk-price, .mk-card strong, .mk-offer strong, .mk-total strong { font: 700 18px/1 "Space Grotesk", sans-serif; }
 .mk-add, .mk-checkout, .mk-empty button { background: var(--navy); color: white; border-radius: 10px; padding: 10px 12px; font-weight: 800; }
 .mk-add:hover, .mk-checkout:hover { background: #1c3654; }

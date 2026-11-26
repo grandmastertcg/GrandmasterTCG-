@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase-browser";
-import { SALE_GAMES, languagesFor } from "@/lib/catalog";
+import { SALE_CONDITIONS, SALE_GAMES, languagesFor } from "@/lib/catalog";
 
 export default function AddProductPage() {
   const [name, setName] = useState("");
@@ -11,7 +11,7 @@ export default function AddProductPage() {
   const [cardSet, setSetName] = useState("");
   const [cardNumber, setCardNumber] = useState("");
   const [rarity, setRarity] = useState("");
-  const [condition, setCondition] = useState("Near Mint");
+  const [condition, setCondition] = useState("Near Mint (NM)");
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("1");
   const [imageUrl, setImageUrl] = useState("");
@@ -241,11 +241,7 @@ if (accessStatus === "denied") {
               value={condition}
               onChange={e => setCondition(e.target.value)}
             >
-              <option>Near Mint</option>
-              <option>Lightly Played</option>
-              <option>Moderately Played</option>
-              <option>Heavily Played</option>
-              <option>Damaged</option>
+              {SALE_CONDITIONS.map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
 

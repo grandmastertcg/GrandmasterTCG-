@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { languagesFor } from "@/lib/catalog";
+import { languagesFor, saleCondition } from "@/lib/catalog";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST(request: NextRequest) {
@@ -94,7 +94,10 @@ export async function POST(request: NextRequest) {
     const name = body.name.trim();
     const game = body.game.trim();
     const setName = body.set_name.trim();
-    const condition = body.condition.trim();
+    const condition = saleCondition(body.condition.trim());
+    if (!condition) {
+      return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
+    }
     const price = body.price.trim();
 
     if (!name || !game || !setName || !condition) {

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
-import { SALE_CONDITIONS, SALE_GAMES, cardLanguage, gbp, languagesFor } from "@/lib/catalog";
+import { SALE_CONDITIONS, SALE_GAMES, cardLanguage, conditionLabel, gbp, languagesFor, saleCondition } from "@/lib/catalog";
 import { commissionOnSale } from "@/lib/commission";
 import { CARRIERS } from "@/lib/shipping";
 import { GRADERS, GRADES } from "@/lib/grades";
@@ -70,7 +70,7 @@ export default function AccountPage() {
     set_name: "",
     card_number: "",
     rarity: "",
-    condition: "Near Mint",
+    condition: "Near Mint (NM)",
     graded: false,
     grader: "PSA",
     grade: "10",
@@ -222,14 +222,14 @@ export default function AccountPage() {
     return edits[listing.id] ?? {
       price: (listing.price_pence / 100).toFixed(2),
       stock: String(listing.stock),
-      condition: listing.condition,
+      condition: conditionLabel(listing.condition),
       selling: listing.seller_business ? "business" : "private",
       language: cardLanguage(listing.game, listing.language) ?? "English"
     };
   }
 
   function rawListing(listing: Listing) {
-    return !listing.grader && SALE_CONDITIONS.includes(listing.condition as (typeof SALE_CONDITIONS)[number]);
+    return !listing.grader && saleCondition(listing.condition) != null;
   }
 
   async function saveListing(listing: Listing) {
@@ -540,7 +540,7 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
             <article className="my-listing" key={listing.id}>
               <div>
                 <strong>{listing.name}</strong>
-                <span>{listing.game}{languagesFor(listing.game).length > 1 ? ` · ${cardLanguage(listing.game, listing.language)}` : ""} · {listing.condition} · {listing.seller_business ? "Business seller" : "Private seller"} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"} · you receive {gbp(listing.price_pence - commissionOnSale(listing.price_pence))}</span>
+                <span>{listing.game}{languagesFor(listing.game).length > 1 ? ` · ${cardLanguage(listing.game, listing.language)}` : ""} · {conditionLabel(listing.condition)} · {listing.seller_business ? "Business seller" : "Private seller"} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"} · you receive {gbp(listing.price_pence - commissionOnSale(listing.price_pence))}</span>
               </div>
               <div>
                 <b>{gbp(listing.price_pence)}</b>

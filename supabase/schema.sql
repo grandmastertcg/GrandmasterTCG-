@@ -7,7 +7,7 @@ create table if not exists public.products (
   set_name text,
   card_number text,
   rarity text,
-  condition text not null check (condition in ('Near Mint','Excellent','Good','Played','Poor')),
+  condition text not null check (condition in ('Near Mint (NM)','Lightly Played (LP)','Moderately Played (MP)','Heavily Played (HP)','Damaged (DMG)')),
   price_pence integer not null check (price_pence >= 0),
   stock integer not null default 1 check (stock >= 0),
   image_url text,

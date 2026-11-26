@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sellerName, userFromRequest } from "@/lib/require-user";
-import { SALE_CONDITIONS, SALE_GAMES, languagesFor } from "@/lib/catalog";
+import { SALE_GAMES, conditionLabel, languagesFor, saleCondition } from "@/lib/catalog";
 import { GRADERS, GRADES, gradeLabel } from "@/lib/grades";
 import { ownCardPhoto } from "@/lib/photos";
 
@@ -17,10 +17,10 @@ export async function GET(request: NextRequest) {
     if (error && /grader|seller_business|language/.test(error.message)) {
       const fallback = await db.from("products").select("id,name,game,set_name,card_number,rarity,condition,price_pence,stock,image_url,active,created_at").eq("seller_id", user.id).order("created_at", { ascending: false });
       if (fallback.error) throw fallback.error;
-      return NextResponse.json({ listings: fallback.data ?? [] });
+      return NextResponse.json({ listings: (fallback.data ?? []).map((listing) => ({ ...listing, condition: conditionLabel(listing.condition) })) });
     }
     if (error) throw error;
-    return NextResponse.json({ listings: data ?? [] });
+    return NextResponse.json({ listings: (data ?? []).map((listing) => ({ ...listing, condition: conditionLabel(listing.condition) })) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Listings could not be loaded.";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -69,8 +69,10 @@ export async function POST(request: NextRequest) {
       }
       condition = gradeLabel(grader, grade);
       stock = 1;
-    } else if (!SALE_CONDITIONS.includes(condition as (typeof SALE_CONDITIONS)[number])) {
-      return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
+    } else {
+      const chosen = saleCondition(condition);
+      if (!chosen) return NextResponse.json({ error: "Choose a condition." }, { status: 400 });
+      condition = chosen;
     }
     const imageUrl = String(body.image_url ?? "").trim();
     const backImageUrl = String(body.back_image_url ?? "").trim();

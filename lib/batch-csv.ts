@@ -176,16 +176,14 @@ function mapGame(value: string, fallback: string) {
 }
 
 function mapCondition(value: string) {
-  const text = value.toLowerCase();
-  if (!text) return "";
-  if (/\b(heavily played|hp|played|poor)\b/.test(text) && !/lightly|moderately|near|excellent|good/.test(text)) {
-    return /\b(poor|damaged)\b/.test(text) ? "Poor" : "Played";
-  }
-  if (/\b(damaged|poor|dmg)\b/.test(text)) return "Poor";
-  if (/\b(heavily played|heavilyplayed)\b/.test(text) || /\bhp\b/.test(text)) return "Played";
-  if (/\b(moderately played|moderatelyplayed)\b/.test(text) || /\bmp\b/.test(text) || /\bgood\b/.test(text)) return "Good";
-  if (/\b(lightly played|lightlyplayed|excellent)\b/.test(text) || /\blp\b/.test(text) || /\bex\b/.test(text)) return "Excellent";
-  if (/\b(near mint|nearmint|mint|nm)\b/.test(text) || text === "new") return "Near Mint";
+  const text = value.toLowerCase().replace(/[()]/g, " ");
+  if (!text.trim()) return "";
+  if (/\b(dmg|damaged|poor)\b/.test(text)) return "Damaged (DMG)";
+  if (/\b(heavily played|heavilyplayed)\b/.test(text) || /\bhp\b/.test(text)) return "Heavily Played (HP)";
+  if (/\b(moderately played|moderatelyplayed)\b/.test(text) || /\bmp\b/.test(text) || /\bgood\b/.test(text)) return "Moderately Played (MP)";
+  if (/\b(lightly played|lightlyplayed|excellent)\b/.test(text) || /\blp\b/.test(text)) return "Lightly Played (LP)";
+  if (/\b(near mint|nearmint)\b/.test(text) || /\bnm\b/.test(text) || /\bmint\b/.test(text) || text.trim() === "new") return "Near Mint (NM)";
+  if (/\bplayed\b/.test(text)) return "Heavily Played (HP)";
   return "";
 }
 
@@ -309,7 +307,7 @@ export function parseBatchCsv(text: string, fallbackGame: string, fallbackLangua
       issues.push({ row: line, message: `${name} was listed with 99 copies. A listing holds at most 99.` });
     }
     const graded = slab(firstFilled(row, graderAt), firstFilled(row, gradeAt), firstFilled(row, conditionAt));
-    const condition = graded ? gradeLabel(graded.grader, graded.grade) : mapCondition(firstFilled(row, conditionAt)) || (!conditionAt.length ? "Near Mint" : "");
+    const condition = graded ? gradeLabel(graded.grader, graded.grade) : mapCondition(firstFilled(row, conditionAt)) || (!conditionAt.length ? "Near Mint (NM)" : "");
     if (!condition) {
       issues.push({ row: line, message: `${name} has a condition this shop does not use.` });
       continue;
