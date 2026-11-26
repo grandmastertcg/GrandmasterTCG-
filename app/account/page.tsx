@@ -55,6 +55,8 @@ export default function AccountPage() {
   const [holds, setHolds] = useState<Record<string, { kind: string; reason: string }>>({});
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [batchGame, setBatchGame] = useState("Pokémon");
+  const [batchSelling, setBatchSelling] = useState("");
   const [frontPhoto, setFrontPhoto] = useState<File | null>(null);
   const [backPhoto, setBackPhoto] = useState<File | null>(null);
   const [frontPreview, setFrontPreview] = useState("");
@@ -91,6 +93,7 @@ export default function AccountPage() {
         const body = await access.json();
         setAdmin(Boolean(body.admin));
       }
+      setReady(true);
       const sessionId = new URLSearchParams(window.location.search).get("session_id");
       if (sessionId) {
         const confirmed = await fetch("/api/checkout/confirm", {
@@ -101,27 +104,35 @@ export default function AccountPage() {
         if (confirmed.ok) localStorage.removeItem(BASKET_KEY);
       }
       await refresh(session.access_token);
+    }).catch(() => {
+      setMessage("Your account could not be loaded. Refresh the page.");
       setReady(true);
     });
   }, [router]);
 
   async function refresh(accessToken: string) {
-    const response = await fetch("/api/account/listings", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store"
-    });
-    const body = await response.json();
-    if (response.ok) setListings(body.listings ?? []);
-    else setMessage(body.error || "Listings could not be loaded.");
-    const parcels = await fetch("/api/account/shipments", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store"
-    });
-    const parcelBody = await parcels.json();
-    if (parcels.ok) {
-      setSales(parcelBody.sales ?? []);
-      setPurchases(parcelBody.purchases ?? []);
-      setPayoutsConnected(Boolean(parcelBody.payoutsConnected));
+    try {
+      const response = await fetch("/api/account/listings", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store"
+      });
+      const body = await response.json();
+      if (response.ok) setListings(body.listings ?? []);
+      else setMessage(body.error || "Listings could not be loaded.");
+      const parcels = await fetch("/api/account/shipments", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store"
+      });
+      const parcelBody = await parcels.json();
+      if (parcels.ok) {
+        setSales(parcelBody.sales ?? []);
+        setPurchases(parcelBody.purchases ?? []);
+        setPayoutsConnected(Boolean(parcelBody.payoutsConnected));
+      } else {
+        setMessage(parcelBody.error || "Parcels could not be loaded.");
+      }
+    } catch {
+      setMessage("Your account could not be loaded. Refresh the page.");
     }
   }
 
@@ -136,6 +147,40 @@ export default function AccountPage() {
     const photoBody = await photoResponse.json();
     if (!photoResponse.ok) throw new Error(photoBody.error || "The photo could not be uploaded.");
     return String(photoBody.url ?? "");
+  }
+
+  async function uploadBatch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const input = event.currentTarget.elements.namedItem("batch");
+    const file = input instanceof HTMLInputElement ? input.files?.[0] : undefined;
+    if (!file) {
+      setMessage("Choose the CSV file.");
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      body.set("game", batchGame);
+      body.set("seller_business", batchSelling);
+      const response = await fetch("/api/account/listings/batch", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body
+      });
+      const result = await response.json();
+      const skipped = Array.isArray(result.skipped) ? result.skipped as { row: number; message: string }[] : [];
+      const notes = skipped.slice(0, 6).map((item) => `Row ${item.row}: ${item.message}`).join(" ");
+      if (!response.ok) throw new Error(notes ? `${result.error} ${notes}` : result.error || "The batch could not be listed.");
+      setMessage(notes ? `Listed ${result.saved} cards. ${notes}` : `Listed ${result.saved} cards.`);
+      if (input instanceof HTMLInputElement) input.value = "";
+      await refresh(token);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The batch could not be listed.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function createListing(event: FormEvent) {
@@ -441,6 +486,24 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
             {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)} before the card processing fee. The shop keeps {gbp(priceSplit(form.price)!.fee)}.</p>}
             <label>Quantity<input type="number" min={1} max={99} value={form.graded ? "1" : form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} required disabled={form.graded} /></label>
             <button type="submit" disabled={saving}>{saving ? "Saving..." : "List this card"}</button>
+          </form>
+          <h2>Upload a batch</h2>
+          <p>On Card Uploader, open List / Export, then Export CSV, and choose Export Basic. An eBay, TCGplayer, Shopify or Whatnot CSV works as well. Prices in the file are read as pounds, and each row needs a front photo link.</p>
+          <form className="sell-form" onSubmit={uploadBatch}>
+            <label>CSV file<input name="batch" type="file" accept=".csv,text/csv" required /></label>
+            <label>Game when the file does not say
+              <select value={batchGame} onChange={(event) => setBatchGame(event.target.value)}>
+                {SALE_GAMES.map((game) => <option key={game}>{game}</option>)}
+              </select>
+            </label>
+            <label>Who is selling
+              <select value={batchSelling} onChange={(event) => setBatchSelling(event.target.value)} required>
+                <option value="">Choose</option>
+                <option value="private">I am a private seller</option>
+                <option value="business">I am selling as a business</option>
+              </select>
+            </label>
+            <button type="submit" disabled={saving}>{saving ? "Saving..." : "List this batch"}</button>
           </form>
         </section>
         <section className="account-panel">

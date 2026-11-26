@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
 import { settleAccountPayouts } from "@/lib/fulfillment";
@@ -10,15 +10,33 @@ export async function GET(request: NextRequest) {
   const db = supabaseAdmin();
   const { data: admin } = await db.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
   const { data: payout } = await db.from("seller_payout_accounts").select("stripe_account_id").eq("user_id", user.id).maybeSingle();
-  await settleAccountPayouts(user.id);
+  after(() => settleAccountPayouts(user.id));
 
+  const userId = user.id;
   const columns = "id,order_id,seller_key,seller_id,seller_name,carrier,tracking_number,shipped_at,received_at,delivered_at,refunded_at,arrival_asked_at,hold_kind,hold_reason,hold_at,proceeds_pence,commission_pence,stripe_fee_pence,transfer_id,released_at,payout_error,created_at,orders!inner(id,buyer_id,status,created_at,shipping_name,shipping_address)";
-  const loaded = await db.from("shipments").select(columns).eq("orders.status", "paid").order("created_at", { ascending: false });
-  const fallback = loaded.error && /arrival_asked_at/.test(loaded.error.message)
-    ? await db.from("shipments").select(columns.replace(",arrival_asked_at", "")).eq("orders.status", "paid").order("created_at", { ascending: false })
-    : loaded;
-  const shipments = (fallback.data ?? []) as any[];
-  const error = fallback.error;
+  async function loadScoped(select: string) {
+    const sellerRows = await db.from("shipments").select(select).eq("seller_id", userId).eq("orders.status", "paid").order("created_at", { ascending: false });
+    const buyerRows = await db.from("shipments").select(select).eq("orders.buyer_id", userId).eq("orders.status", "paid").order("created_at", { ascending: false });
+    const shopRows = admin
+      ? await db.from("shipments").select(select).eq("seller_key", "shop").eq("orders.status", "paid").order("created_at", { ascending: false })
+      : { data: [] as { id: string }[], error: null };
+    const merged = [...(sellerRows.data ?? []), ...(buyerRows.data ?? []), ...(shopRows.data ?? [])] as { id?: string }[];
+    const seen = new Set<string>();
+    return {
+      data: merged.filter((shipment) => {
+        if (!shipment.id || seen.has(shipment.id)) return false;
+        seen.add(shipment.id);
+        return true;
+      }),
+      error: sellerRows.error || buyerRows.error || shopRows.error
+    };
+  }
+  let loaded = await loadScoped(columns);
+  if (loaded.error && /arrival_asked_at/.test(loaded.error.message)) {
+    loaded = await loadScoped(columns.replace(",arrival_asked_at", ""));
+  }
+  const shipments = (loaded.data ?? []) as any[];
+  const error = loaded.error;
   if (error) {
     if (/hold_at|hold_kind|released_at|delivered_at|refunded_at/.test(error.message)) {
       return NextResponse.json({ error: "Payout holds are not enabled in the database yet." }, { status: 500 });

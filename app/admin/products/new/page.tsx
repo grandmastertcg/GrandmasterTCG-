@@ -16,6 +16,7 @@ export default function AddProductPage() {
   const [backImageUrl, setBackImageUrl] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [batchGame, setBatchGame] = useState("Pokémon");
 const [accessStatus, setAccessStatus] = useState<
     "checking" | "allowed" | "denied"
   >("checking");
@@ -303,6 +304,69 @@ if (accessStatus === "denied") {
           </button>
 
           <p role="status">{message}</p>
+        </form>
+
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const input = event.currentTarget.elements.namedItem("batch");
+            const file = input instanceof HTMLInputElement ? input.files?.[0] : undefined;
+            if (!file) {
+              setMessage("Choose the CSV file.");
+              return;
+            }
+            setSaving(true);
+            setMessage("");
+            try {
+              const { data, error } = await supabase.auth.getSession();
+              if (error || !data.session) {
+                setMessage("Please sign in as an administrator.");
+                return;
+              }
+              const body = new FormData();
+              body.set("file", file);
+              body.set("game", batchGame);
+              const response = await fetch("/api/admin/products/batch", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${data.session.access_token}` },
+                body
+              });
+              const result = await response.json();
+              const skipped = Array.isArray(result.skipped) ? result.skipped as { row: number; message: string }[] : [];
+              const notes = skipped.slice(0, 6).map((item) => `Row ${item.row}: ${item.message}`).join(" ");
+              if (!response.ok) throw new Error(notes ? `${result.error} ${notes}` : result.error || "The batch could not be listed.");
+              setMessage(notes ? `Listed ${result.saved} shop cards. ${notes}` : `Listed ${result.saved} shop cards.`);
+              if (input instanceof HTMLInputElement) input.value = "";
+            } catch (uploadError) {
+              setMessage(uploadError instanceof Error ? uploadError.message : "The batch could not be listed.");
+            } finally {
+              setSaving(false);
+            }
+          }}
+          style={{ display: "grid", gap: 12, marginTop: 28 }}
+        >
+          <h2 style={{ margin: "8px 0 0" }}>Upload a batch</h2>
+          <p style={{ margin: 0, color: "#4b5563" }}>
+            These cards are sold by GrandmasterTCG. On Card Uploader, export a Basic, eBay, TCGplayer, Shopify or Whatnot CSV. Prices are read as pounds, and each row needs a front photo link.
+          </p>
+          <label style={labelStyle}>
+            CSV file
+            <input name="batch" type="file" accept=".csv,text/csv" required style={inputStyle} />
+          </label>
+          <label style={labelStyle}>
+            Game when the file does not say
+            <select style={inputStyle} value={batchGame} onChange={(event) => setBatchGame(event.target.value)}>
+              <option>Pokémon</option>
+              <option>Yu-Gi-Oh!</option>
+              <option>One Piece</option>
+              <option>Disney Lorcana</option>
+              <option>Magic: The Gathering</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <button type="submit" disabled={saving} style={{ background: "#f4c95d", color: "#111", padding: 16, border: 0, borderRadius: 6, fontWeight: "bold", cursor: "pointer" }}>
+            {saving ? "Saving..." : "List this batch"}
+          </button>
         </form>
       </div>
     </main>
