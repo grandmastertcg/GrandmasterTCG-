@@ -36,6 +36,7 @@ type Listing = {
   price_pence: number;
   stock: number;
   active: boolean;
+  seller_business?: boolean | null;
 };
 
 const BASKET_KEY = "gmtcg-basket";
@@ -58,7 +59,7 @@ export default function AccountPage() {
   const [backPhoto, setBackPhoto] = useState<File | null>(null);
   const [frontPreview, setFrontPreview] = useState("");
   const [backPreview, setBackPreview] = useState("");
-  const [edits, setEdits] = useState<Record<string, { price: string; stock: string; condition: string }>>({});
+  const [edits, setEdits] = useState<Record<string, { price: string; stock: string; condition: string; selling: string }>>({});
   const [form, setForm] = useState({
     name: "",
     game: "Pokémon",
@@ -71,7 +72,8 @@ export default function AccountPage() {
     grade: "10",
     cert_number: "",
     price: "",
-    stock: "1"
+    stock: "1",
+    seller_business: ""
   });
 
   useEffect(() => {
@@ -171,7 +173,8 @@ export default function AccountPage() {
     return edits[listing.id] ?? {
       price: (listing.price_pence / 100).toFixed(2),
       stock: String(listing.stock),
-      condition: listing.condition
+      condition: listing.condition,
+      selling: listing.seller_business ? "business" : "private"
     };
   }
 
@@ -187,7 +190,7 @@ export default function AccountPage() {
       const response = await fetch(`/api/account/listings/${listing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ price: draft.price, stock: Number(draft.stock), condition: draft.condition })
+        body: JSON.stringify({ price: draft.price, stock: Number(draft.stock), condition: draft.condition, seller_business: draft.selling })
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Listing could not be updated.");
@@ -427,6 +430,13 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
               {frontPreview && <img className="photo-preview" src={frontPreview} alt="Front of the card" />}
               {backPreview && <img className="photo-preview" src={backPreview} alt="Back of the card" />}
             </div>
+            <label>Who is selling
+              <select value={form.seller_business} onChange={(event) => setForm({ ...form, seller_business: event.target.value })} required>
+                <option value="">Choose</option>
+                <option value="private">I am a private seller</option>
+                <option value="business">I am selling as a business</option>
+              </select>
+            </label>
             <label>Price (£)<input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required /></label>
             {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)} before the card processing fee. The shop keeps {gbp(priceSplit(form.price)!.fee)}.</p>}
             <label>Quantity<input type="number" min={1} max={99} value={form.graded ? "1" : form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} required disabled={form.graded} /></label>
@@ -439,12 +449,16 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
             <article className="my-listing" key={listing.id}>
               <div>
                 <strong>{listing.name}</strong>
-                <span>{listing.game} · {listing.condition} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"} · you receive {gbp(listing.price_pence - commissionOnSale(listing.price_pence))}</span>
+                <span>{listing.game} · {listing.condition} · {listing.seller_business ? "Business seller" : "Private seller"} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"} · you receive {gbp(listing.price_pence - commissionOnSale(listing.price_pence))}</span>
               </div>
               <div>
                 <b>{gbp(listing.price_pence)}</b>
                 {listing.active && (
                   <form className="track-form" onSubmit={(event) => { event.preventDefault(); saveListing(listing); }}>
+                    <select aria-label={`Seller type for ${listing.name}`} value={listingDraft(listing).selling} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), selling: event.target.value } })}>
+                      <option value="private">Private seller</option>
+                      <option value="business">Business seller</option>
+                    </select>
                     <input inputMode="decimal" aria-label={`Price for ${listing.name}`} value={listingDraft(listing).price} onChange={(event) => setEdits({ ...edits, [listing.id]: { ...listingDraft(listing), price: event.target.value } })} />
                     {rawListing(listing) && (
                       <>

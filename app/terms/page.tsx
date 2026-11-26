@@ -11,6 +11,9 @@ export default function TermsPage() {
       <h1>Terms and conditions</h1>
       <p>These terms cover buying and selling on grandmastertcg.co.uk. GrandmasterTCG runs the marketplace. Questions about an order, a listing, or your information go to <a href="mailto:orders@grandmastertcg.co.uk">orders@grandmastertcg.co.uk</a>. Creating an account, listing a card, or paying for a card means you accept these terms and the <a href="/privacy">privacy notice</a>. Last updated 26 November 2026.</p>
 
+      <h2>Who runs the shop</h2>
+      <p>GrandmasterTCG runs the marketplace at grandmastertcg.co.uk. Orders and questions go to <a href="mailto:orders@grandmastertcg.co.uk">orders@grandmastertcg.co.uk</a>. Cards sold under the name GrandmasterTCG are sold by the shop. Cards sold under a member’s display name are sold by that member.</p>
+
       <h2>The shop</h2>
       <p>GrandmasterTCG is a UK marketplace for trading cards. Members list their own cards, and some cards are sold by the shop itself. Each listing is one seller’s offer. If someone else lists the same card, both listings stay on the market with their own price, condition, photos and seller. The buyer chooses one listing. Game names and card names are trademarks of their owners.</p>
 
@@ -38,6 +41,13 @@ export default function TermsPage() {
       <h2>Posting the card</h2>
       <p>After the buyer pays, your account shows the UK address for that parcel, and the cards in it. Post only those cards. The buyer does not see that address on the tracking page. Add a tracking number within 5 days of the payment. You cannot mark a parcel posted without a tracking number. If those 5 days pass with no tracking number, the buyer is refunded for that parcel and you are not paid. Adding a tracking number before the refund is sent still lets the normal payout rule apply. The couriers on the form are Royal Mail, Parcelforce, Evri, DPD, UPS, DHL, FedEx and Other. The number has to be the one for that parcel.</p>
       <p>Once the number is saved, you and the buyer can both open that parcel and follow where it is. Scans appear after the courier posts them, so a new number can stay blank for a while. You can also open the courier’s own tracker from that page.</p>
+
+      <h2>Private sellers and business sellers</h2>
+      <p>Every member listing says whether the seller is a private seller or a business. A private seller is selling their own card and is not selling in the course of a business. A business seller is selling as a business. The shop’s own cards are business sales. A seller chooses this when they list the card, and they can change it while the listing is still for sale.</p>
+
+      <h2>Cancelling a business sale</h2>
+      <p>When you buy from a business seller, or from GrandmasterTCG, you can cancel for any reason within 14 days after the day the parcel arrives. Email <a href="mailto:orders@grandmastertcg.co.uk">orders@grandmastertcg.co.uk</a> or open a refund request on your account before the seller is paid. Send the card back in the same condition. You pay the return postage, unless the card was not as listed. The price of that parcel is refunded to the card that paid, including the shop’s fee and that parcel’s share of the card fee, within 14 days of the shop receiving the card back. This right is separate from the payout hold. A term about when the seller is paid does not remove it.</p>
+      <p>A private sale does not have that 14-day cancellation right. The card still has to match the listing. You can open a dispute or a refund request before the seller is paid if it does not.</p>
 
       <h2>Buying a card</h2>
       <p>When the seller adds tracking, the shop emails you the number and it appears on your account. Press “I received this” only when that parcel has arrived and matches the listing. You can undo that for an hour. The seller is paid after the hour. You cannot open a dispute or request a refund after the seller has been paid. If you do nothing, the seller is paid 2 days after the courier shows the parcel was delivered. The shop emails you when that delivery scan appears. If the courier still has not shown a delivery 7 days after the tracking number was added, the shop emails you once. Confirm the parcel or open a dispute within 2 days of that email. If you do neither, the seller is paid.</p>

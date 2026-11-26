@@ -20,7 +20,8 @@ export default function PrivacyPage() {
       <p>The shop uses this information to run your account, take payment, show the seller where to post, pay the seller, refund a parcel, and email you about the order. Stripe processes the card payment and seller payouts. The shop emails from orders@grandmastertcg.co.uk.</p>
 
       <h2>Who else sees it</h2>
-      <p>The seller of a parcel sees the buyer’s delivery name and address, and the cards to post. The buyer sees the seller’s display name, the listing, and the tracking number. Shop admin can see orders, disputes, and refunds. Stripe sees the payment and payout details it needs to move the money. The shop does not sell this information.</p>
+      <p>The seller of a parcel sees the buyer’s delivery name and address, and the cards to post. The buyer sees the seller’s display name, whether they are a private seller or a business, the listing, and the tracking number. Shop admin can see orders, disputes, and refunds. The shop does not sell this information.</p>
+      <p>Stripe takes the card payment and pays sellers. Supabase stores the accounts, listings, photos and orders. Resend sends the order emails. Those companies process the information for the shop, and some of them store it outside the United Kingdom.</p>
 
       <h2>How long it is kept</h2>
       <p>Account, order, payout, and listing records are kept while the shop needs them to complete the sale, handle a dispute, and keep its accounting records. Photos stay with the listing until the listing is removed.</p>

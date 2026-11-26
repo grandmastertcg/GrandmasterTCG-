@@ -5,7 +5,7 @@ import { SALE_CONDITIONS, SALE_GAMES } from "@/lib/catalog";
 import { GRADERS, GRADES, gradeLabel } from "@/lib/grades";
 import { ownCardPhoto } from "@/lib/photos";
 
-const columns = "id,name,game,set_name,card_number,rarity,condition,grader,price_pence,stock,image_url,active,created_at";
+const columns = "id,name,game,set_name,card_number,rarity,condition,grader,price_pence,stock,image_url,active,seller_business,created_at";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     const db = supabaseAdmin();
     const { data, error } = await db.from("products").select(columns).eq("seller_id", user.id).order("created_at", { ascending: false });
-    if (error && /grader/.test(error.message)) {
+    if (error && /grader|seller_business/.test(error.message)) {
       const fallback = await db.from("products").select("id,name,game,set_name,card_number,rarity,condition,price_pence,stock,image_url,active,created_at").eq("seller_id", user.id).order("created_at", { ascending: false });
       if (fallback.error) throw fallback.error;
       return NextResponse.json({ listings: fallback.data ?? [] });
@@ -87,6 +87,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Stock must be between 1 and 99." }, { status: 400 });
     }
 
+    const selling = body.seller_business === "business" ? "business" : body.seller_business === "private" ? "private" : "";
+    if (!selling) {
+      return NextResponse.json({ error: "Say whether you are a private seller or a business." }, { status: 400 });
+    }
     const { data, error } = await supabaseAdmin()
       .from("products")
       .insert({
@@ -105,13 +109,14 @@ export async function POST(request: NextRequest) {
         back_image_url: backImageUrl || null,
         active: true,
         seller_id: user.id,
-        seller_name: sellerName(user)
+        seller_name: sellerName(user),
+        seller_business: selling === "business"
       })
       .select("id")
       .single();
 
     if (error) {
-      const missingColumn = /seller_id|seller_name|grader|grade|cert_number|back_image_url/.test(error.message);
+      const missingColumn = /seller_id|seller_name|seller_business|grader|grade|cert_number|back_image_url/.test(error.message);
       return NextResponse.json(
         { error: missingColumn ? "Card photos and grades are not enabled in the database yet." : "Unable to save this listing." },
         { status: 500 }

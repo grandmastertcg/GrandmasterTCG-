@@ -38,7 +38,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (!existing.active) return NextResponse.json({ error: "This listing has been removed." }, { status: 400 });
 
     const graded = Boolean(existing.grader) || !SALE_CONDITIONS.includes(existing.condition as (typeof SALE_CONDITIONS)[number]);
-    const update: { price_pence: number; stock?: number; condition?: string } = { price_pence: pence };
+    const update: { price_pence: number; stock?: number; condition?: string; seller_business?: boolean } = { price_pence: pence };
+    if (body.seller_business === "business" || body.seller_business === "private") {
+      update.seller_business = body.seller_business === "business";
+    }
     if (graded) {
       update.stock = 1;
     } else {
@@ -54,8 +57,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       update.condition = condition;
     }
 
-    const { data, error } = await db.from("products").update(update).eq("id", id).eq("seller_id", user.id).select("id").maybeSingle();
-    if (error) throw error;
+    let saved = await db.from("products").update(update).eq("id", id).eq("seller_id", user.id).select("id").maybeSingle();
+    if (saved.error && /seller_business/.test(saved.error.message)) {
+      const { seller_business: _sellerBusiness, ...rest } = update;
+      saved = await db.from("products").update(rest).eq("id", id).eq("seller_id", user.id).select("id").maybeSingle();
+    }
+    if (saved.error) throw saved.error;
+    const data = saved.data;
     if (!data) return NextResponse.json({ error: "That listing is not yours." }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (error) {

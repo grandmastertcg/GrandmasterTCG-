@@ -1,5 +1,5 @@
 import { commissionOnSale } from "@/lib/commission";
-import { sendArrivalEmail, sendDeliveredEmail, sendSaleEmails, sendUnpostedRefundEmail } from "@/lib/mail";
+import { sendArrivalEmail, sendDeliveredEmail, sendPaidEmail, sendSaleEmails, sendUnpostedRefundEmail } from "@/lib/mail";
 import { deliveryMoment, lookupTracking } from "@/lib/shipping";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
@@ -190,7 +190,8 @@ export async function paySeller(shipmentId: string) {
   }
   if (!payoutDue(shipment)) return;
   if (shipment.seller_key === "shop") {
-    await db.from("shipments").update({ released_at: new Date().toISOString(), payout_error: null }).eq("id", shipment.id).is("released_at", null);
+    const { data: released } = await db.from("shipments").update({ released_at: new Date().toISOString(), payout_error: null }).eq("id", shipment.id).is("released_at", null).select("id").maybeSingle();
+    if (released) await sendPaidEmail(shipment.id);
     return;
   }
   await applyStripeFee(shipment.order_id);
@@ -226,7 +227,8 @@ export async function paySeller(shipmentId: string) {
     metadata: { shipment_id: current.id }
   }, { idempotencyKey: `shipment_${current.id}` });
 
-  await db.from("shipments").update({ transfer_id: transfer.id, released_at: new Date().toISOString(), payout_error: null }).eq("id", current.id);
+  const { data: paid } = await db.from("shipments").update({ transfer_id: transfer.id, released_at: new Date().toISOString(), payout_error: null }).eq("id", current.id).is("transfer_id", null).select("id").maybeSingle();
+  if (paid) await sendPaidEmail(current.id);
 }
 
 export async function recordDelivery(shipmentId: string, when: Date) {

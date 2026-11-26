@@ -190,6 +190,30 @@ export async function remindUnpostedSales() {
   }
 }
 
+export async function sendPaidEmail(shipmentId: string) {
+  try {
+    const context = await parcelContext(shipmentId);
+    if (!context) return;
+    const cards = context.cards || "Your cards";
+    if (context.shipment.seller_id) {
+      const email = await userEmail(context.shipment.seller_id);
+      if (!email) return;
+      await deliver(
+        email,
+        "You have been paid for a GrandmasterTCG sale",
+        `This sale has been paid.\n\n${cards}\n\n${gbp(context.shipment.proceeds_pence)} has been sent to your Stripe payout account. Stripe then pays your bank on its own schedule.\n\n${SITE}/account`
+      );
+      return;
+    }
+    const text = `This shop sale is complete.\n\n${cards}\n\nThe payment stays with GrandmasterTCG.\n\n${SITE}/admin`;
+    for (const email of await adminEmails()) {
+      await deliver(email, "A GrandmasterTCG shop sale is complete", text);
+    }
+  } catch {
+    // A missed email must not undo the payout.
+  }
+}
+
 export async function sendSaleEmails(orderId: string) {
   try {
     const db = supabaseAdmin();
@@ -205,7 +229,7 @@ export async function sendSaleEmails(orderId: string) {
       await deliver(
         buyer,
         "Your GrandmasterTCG order",
-        `Payment received for ${gbp(order.total_pence)}.\n\n${lines.join("\n")}\n\n${oversold ? "A card sold out before payment finished. That parcel is refunded to your card." : "The seller has 5 days to add a tracking number."} You can follow the order from your account: ${SITE}/account`
+        `Payment received for ${gbp(order.total_pence)}.\n\n${lines.join("\n")}\n\n${oversold ? "A card sold out before payment finished. That parcel is refunded to your card." : "The seller has 5 days to add a tracking number."} If the seller is a business, or the card is sold by GrandmasterTCG, you can cancel for 14 days after the parcel arrives. A private seller is not covered by that right. The card still has to match the listing.\n\n${SITE}/account\n${SITE}/terms`
       );
     }
 

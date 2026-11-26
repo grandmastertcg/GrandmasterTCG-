@@ -14,6 +14,7 @@ export type Product = {
   language?: string | null;
   finish?: string | null;
   seller_name?: string | null;
+  seller_business?: boolean | null;
   grader?: string | null;
   grade?: string | null;
   cert_number?: string | null;

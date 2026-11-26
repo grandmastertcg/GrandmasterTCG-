@@ -376,7 +376,7 @@ export default function Home() {
                       <div>
                         <strong>{product.name}</strong>
                         <small className="mk-sub">{[product.rarity, product.finish, product.language].filter(Boolean).join(" · ") || product.game}</small>
-                        <small>Sold by {product.seller_name || "GrandmasterTCG"}</small>
+                        <small>Sold by {product.seller_name || "GrandmasterTCG"} · {!product.seller_name || product.seller_business ? "Business seller" : "Private seller"}</small>
                         <small className="mk-mobile-meta">{product.condition}</small>
                         {otherCopies(product) > 0 && <em>{otherCopies(product)} other {otherCopies(product) === 1 ? "copy" : "copies"}</em>}
                       </div>
@@ -449,7 +449,8 @@ export default function Home() {
             <p className="mk-meta">
               {[selected.set_name, selected.card_number, selected.rarity, selected.finish, selected.language].filter(Boolean).join(" · ")}
             </p>
-            <p className="mk-meta">Sold by {selected.seller_name || "GrandmasterTCG"}</p>
+            <p className="mk-meta">Sold by {selected.seller_name || "GrandmasterTCG"} · {!selected.seller_name || selected.seller_business ? "Business seller" : "Private seller"}</p>
+            <p className="mk-fine">Postage to a UK address is included in the price. The seller has 5 days to add a tracking number. If they do not, you are refunded. If the card sells out before payment finishes, you are refunded. {!selected.seller_name || selected.seller_business ? "You can cancel for 14 days after the parcel arrives. You pay the return postage unless the card was not as listed." : "This is a private sale, so there is no 14-day cancellation. The card still has to match the listing."}</p>
             {selected.description && <p>{selected.description}</p>}
             <div className="mk-offer">
               <div>
@@ -504,7 +505,7 @@ export default function Home() {
                 <button className="mk-checkout" disabled={busy} onClick={checkout}>
                   {busy ? "Starting checkout…" : "Secure checkout"}
                 </button>
-                <p className="mk-fine">Sign in to check out. Stripe collects the UK shipping address.</p>
+                <p className="mk-fine">Sign in to check out. Stripe collects the UK shipping address. A business seller, including GrandmasterTCG, can be cancelled for 14 days after the parcel arrives. A private seller is not covered by that right. The card still has to match the listing.</p>
               </>
             )}
           </aside>

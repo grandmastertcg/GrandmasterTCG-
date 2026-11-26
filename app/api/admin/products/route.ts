@@ -176,9 +176,29 @@ export async function POST(request: NextRequest) {
           stock: body.stock,
           image_url: imageUrl,
           back_image_url: backImageUrl,
+          seller_business: true,
         })
         .select("id")
         .single();
+
+    if (insertError && /seller_business/.test(insertError.message)) {
+      const retry = await supabase.from("products").insert({
+        name,
+        game,
+        set_name: setName,
+        card_number: body.card_number.trim(),
+        rarity: body.rarity.trim(),
+        condition,
+        price_pence: pricePence,
+        stock: body.stock,
+        image_url: imageUrl,
+        back_image_url: backImageUrl
+      }).select("id").single();
+      if (retry.error || !retry.data) {
+        return NextResponse.json({ error: "Unable to save product." }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, product: retry.data }, { status: 201 });
+    }
 
     if (insertError) {
       console.error("Product insert failed:", {
