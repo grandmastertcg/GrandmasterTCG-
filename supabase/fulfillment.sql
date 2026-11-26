@@ -32,6 +32,7 @@ create table if not exists public.shipments (
   tracking_status text,
   tracking_events jsonb,
   tracked_at timestamptz,
+  arrival_asked_at timestamptz,
   hold_kind text,
   hold_reason text,
   hold_at timestamptz,

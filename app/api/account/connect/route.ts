@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
 import { userFromRequest } from "@/lib/require-user";
-import { releaseDuePayouts } from "@/lib/fulfillment";
+import { releaseSellerPayouts } from "@/lib/fulfillment";
 
 export async function POST(request: NextRequest) {
   const user = await userFromRequest(request);
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await releaseDuePayouts();
+      await releaseSellerPayouts(user.id);
     } catch {
       // Stripe can still be finishing the seller account. The next visit retries the payout.
     }

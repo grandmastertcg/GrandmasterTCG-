@@ -15,10 +15,17 @@ export async function POST(req: NextRequest) {
     if (ids.some((id: string) => !/^[0-9a-f-]{36}$/i.test(id))) {
       return NextResponse.json({ error: "Sample listings cannot be purchased. Add real products in the database first." }, { status: 400 });
     }
+    const buyer = await userFromRequest(req);
+    if (!buyer?.email) {
+      return NextResponse.json({ error: "Sign in before you check out." }, { status: 401 });
+    }
     const db = supabaseAdmin();
     const { data: products, error } = await db.from("products")
       .select("id,name,condition,price_pence,stock,active,seller_id,seller_name").in("id", ids);
     if (error || !products) throw error || new Error("Products unavailable");
+    if (products.some((product) => product.seller_id === buyer.id)) {
+      return NextResponse.json({ error: "You cannot buy a card you listed." }, { status: 400 });
+    }
     const line_items = body.items.map((item: { product_id?: string; quantity?: number }) => {
       const p = products.find(x => x.id === item.product_id);
       const qty = Number(item.quantity);
@@ -30,10 +37,6 @@ export async function POST(req: NextRequest) {
       return sum + (p ? commissionOnSale(p.price_pence) * Number(item.quantity) : 0);
     }, 0);
     const salePence = line_items.reduce((sum: number, item: { price_data: { unit_amount: number }; quantity: number }) => sum + item.price_data.unit_amount * item.quantity, 0);
-    const buyer = await userFromRequest(req);
-    if (!buyer?.email) {
-      return NextResponse.json({ error: "Sign in before you check out." }, { status: 401 });
-    }
     const stripe = stripeClient();
     const base = process.env.NEXT_PUBLIC_SITE_URL;
     if (!base) throw new Error("Site URL is not configured.");

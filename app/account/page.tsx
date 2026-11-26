@@ -17,6 +17,7 @@ type Parcel = {
   shippedAt: string | null;
   receivedAt: string | null;
   deliveredAt: string | null;
+  arrivalAskedAt?: string | null;
   refundedAt: string | null;
   holdKind: string | null;
   holdReason: string | null;
@@ -225,7 +226,12 @@ export default function AccountPage() {
   return { fee, net: pence - fee };
 }
 
-async function parcelAction(id: string, action: "ship" | "receive", carrier?: string, trackingNumber?: string) {
+function canUndo(parcel: Parcel) {
+  if (!parcel.receivedAt || parcel.paid || parcel.refundedAt) return false;
+  return Date.now() - new Date(parcel.receivedAt).getTime() < 60 * 60 * 1000;
+}
+
+async function parcelAction(id: string, action: "ship" | "receive" | "undo", carrier?: string, trackingNumber?: string) {
     const response = await fetch(`/api/account/shipments/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -236,7 +242,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
       setMessage(body.error || "That parcel could not be updated.");
       return;
     }
-    setMessage(body.message || (action === "ship" ? "Tracking saved. You are paid when the buyer confirms, or 2 days after the courier shows it delivered." : "Delivery confirmed."));
+    setMessage(body.message || (action === "ship" ? "Tracking saved. You are paid when the buyer confirms, or 2 days after the courier shows it delivered." : action === "undo" ? "Confirmation removed." : "Marked as received."));
     await refresh(token);
   }
 
@@ -247,13 +253,17 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
 
   function saleStatus(parcel: Parcel) {
     if (parcel.refundedAt) return "Refunded to the buyer.";
-    if (parcel.holdKind === "unposted") return "No tracking number within 5 days. The payout is held until the shop refunds the buyer or releases it.";
+    if (parcel.holdKind === "unposted") return "No tracking number within 5 days. The buyer is refunded automatically.";
+    if (parcel.holdKind === "oversold") return "This card sold out before payment finished. The buyer is refunded automatically.";
     if (parcel.holdKind === "refund") return `Buyer requested a refund. ${parcel.holdReason || ""}`;
     if (parcel.holdKind) return `Buyer opened a dispute. ${parcel.holdReason || ""}`;
     if (parcel.paid && parcel.receivedAt) return "Buyer received it. Paid out.";
-    if (parcel.paid) return "Paid out 2 days after the courier showed it delivered.";
-    if (parcel.receivedAt) return "Buyer received it. Payout pending.";
+    if (parcel.paid && parcel.deliveredAt) return "Paid out 2 days after the courier showed it delivered.";
+    if (parcel.paid && parcel.arrivalAskedAt) return "Paid out because the courier showed no delivery and the buyer did not reply.";
+    if (parcel.paid) return "Paid out.";
+    if (parcel.receivedAt) return "Buyer confirmed receipt. Paid about an hour later, unless they undo it.";
     if (parcel.deliveredAt) return `Courier shows this delivered. Pays on ${payOn(parcel.deliveredAt)} unless the buyer disputes or requests a refund.`;
+    if (parcel.arrivalAskedAt) return "The buyer has been asked if this arrived. Paid two days after that email if they stay silent.";
     if (parcel.trackingNumber) return `Posted by ${parcel.carrier}: ${parcel.trackingNumber}. Paid when the buyer confirms, or 2 days after the courier shows it delivered.`;
     return "Needs a tracking number within 5 days of payment.";
   }
@@ -310,7 +320,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
       {message && <p className="join-error" role="status">{message}</p>}
       <section className="account-panel parcel-panel">
         <h2>Payouts and parcels</h2>
-        <p>Every sale must be posted with tracking within 5 days of payment. If it is not, the payout is held and the shop can refund the buyer. Once the number is saved, you and the buyer can both open Track parcel and follow where it is. Stripe pays the seller when the buyer presses “I received this”, or 2 days after the courier shows the parcel delivered. A dispute or refund request holds that payout until the shop decides it. Your 2% fee stays with the shop.</p>
+        <p>Every sale must be posted with tracking within 5 days of payment. If it is not, the buyer is refunded and you are not paid. Once the number is saved, you and the buyer can both open Track parcel and follow where it is. Stripe pays the seller an hour after the buyer presses “I received this”, or 2 days after the courier shows the parcel delivered. If a tracked parcel still has no delivery scan after 7 days, the buyer is asked once, and the seller is paid 2 days later if the buyer stays silent. A dispute or refund request holds that payout until the shop decides it. Your 2% fee stays with the shop.</p>
         <button type="button" onClick={connectPayouts}>{payoutsConnected ? "Open Stripe payouts" : "Set up Stripe payouts"}</button>
         <h3>Sales to post</h3>
         {sales.length === 0 ? <p>No paid sales waiting.</p> : sales.map((parcel) => (
@@ -325,13 +335,13 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
             <div>
               <b>{gbp(parcel.proceedsPence)}</b>
               {(parcel.stripeFeePence ?? 0) > 0 && <span>Card fee {gbp(parcel.stripeFeePence ?? 0)}</span>}
-              {!parcel.trackingNumber && !parcel.receivedAt && (
-                <form className="track-form" onSubmit={(event) => { event.preventDefault(); const entry = tracking[parcel.id] ?? { carrier: "Royal Mail", number: "" }; parcelAction(parcel.id, "ship", entry.carrier, entry.number); }}>
-                  <select value={tracking[parcel.id]?.carrier ?? "Royal Mail"} onChange={(event) => setTracking({ ...tracking, [parcel.id]: { carrier: event.target.value, number: tracking[parcel.id]?.number ?? "" } })}>
+              {!parcel.receivedAt && !parcel.refundedAt && (
+                <form className="track-form" onSubmit={(event) => { event.preventDefault(); const entry = tracking[parcel.id] ?? { carrier: parcel.carrier || "Royal Mail", number: parcel.trackingNumber || "" }; parcelAction(parcel.id, "ship", entry.carrier, entry.number); }}>
+                  <select value={tracking[parcel.id]?.carrier ?? parcel.carrier ?? "Royal Mail"} onChange={(event) => setTracking({ ...tracking, [parcel.id]: { carrier: event.target.value, number: tracking[parcel.id]?.number ?? parcel.trackingNumber ?? "" } })}>
                     {CARRIERS.map((item) => <option key={item}>{item}</option>)}
                   </select>
-                  <input placeholder="Tracking number" value={tracking[parcel.id]?.number ?? ""} onChange={(event) => setTracking({ ...tracking, [parcel.id]: { carrier: tracking[parcel.id]?.carrier ?? "Royal Mail", number: event.target.value } })} required />
-                  <button type="submit">Mark posted</button>
+                  <input placeholder="Tracking number" value={tracking[parcel.id]?.number ?? parcel.trackingNumber ?? ""} onChange={(event) => setTracking({ ...tracking, [parcel.id]: { carrier: tracking[parcel.id]?.carrier ?? parcel.carrier ?? "Royal Mail", number: event.target.value } })} required />
+                  <button type="submit">{parcel.trackingNumber ? "Update tracking" : "Mark posted"}</button>
                 </form>
               )}
             </div>
@@ -343,10 +353,11 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
             <div>
               <strong>{parcel.items.map((item) => `${item.quantity} × ${item.name}`).join(", ") || "Cards"}</strong>
               <span>{parcel.sellerName} · {parcel.trackingNumber ? `${parcel.carrier} ${parcel.trackingNumber}` : "Waiting for tracking"}</span>
-              {parcel.refundedAt ? <span>Refunded to your card.</span> : parcel.holdKind === "unposted" ? <span>No tracking was added within 5 days. The shop can refund this parcel.</span> : parcel.holdKind ? <span>{parcel.holdKind === "refund" ? "Refund requested. The seller is not paid while the shop looks at this." : "Dispute open. The seller is not paid while the shop looks at this."} {parcel.holdReason}</span> : parcel.paid ? <span>{parcel.receivedAt ? "Received. The seller has been paid." : "The seller was paid 2 days after the courier showed it delivered."}</span> : parcel.deliveredAt && !parcel.receivedAt ? <span>The courier shows this delivered. The seller is paid on {payOn(parcel.deliveredAt)} unless you dispute or request a refund.</span> : parcel.trackingNumber && !parcel.receivedAt ? <span>The seller is paid when you confirm, or 2 days after the courier shows it delivered.</span> : <span>Waiting for tracking. The seller has 5 days from payment to add it.</span>}
+              {parcel.refundedAt ? <span>Refunded to your card.</span> : parcel.holdKind === "unposted" ? <span>No tracking was added within 5 days. The refund is going back to your card.</span> : parcel.holdKind === "oversold" ? <span>This card sold out before payment finished. The refund is going back to your card.</span> : parcel.holdKind ? <span>{parcel.holdKind === "refund" ? "Refund requested. The seller is not paid while the shop looks at this." : "Dispute open. The seller is not paid while the shop looks at this."} {parcel.holdReason}</span> : parcel.paid ? <span>{parcel.receivedAt ? "Received. The seller has been paid." : parcel.deliveredAt ? "The seller was paid 2 days after the courier showed it delivered." : "The seller has been paid."}</span> : parcel.receivedAt ? <span>You confirmed this. You can undo it for an hour. The seller is paid after that.</span> : parcel.deliveredAt ? <span>The courier shows this delivered. The seller is paid on {payOn(parcel.deliveredAt)} unless you dispute or request a refund.</span> : parcel.arrivalAskedAt ? <span>The courier has not shown a delivery. Confirm it, or dispute it, within 2 days of the email. If you do neither, the seller is paid.</span> : parcel.trackingNumber ? <span>The seller is paid when you confirm, or 2 days after the courier shows it delivered.</span> : <span>Waiting for tracking. The seller has 5 days from payment to add it.</span>}
             </div>
             {parcel.trackingNumber && <a href={`/account/parcels/${parcel.id}`}>Track parcel</a>}
             {!parcel.paid && !parcel.refundedAt && !parcel.holdKind && parcel.trackingNumber && !parcel.receivedAt && <button type="button" onClick={() => parcelAction(parcel.id, "receive")}>I received this</button>}
+            {canUndo(parcel) && <button type="button" onClick={() => parcelAction(parcel.id, "undo")}>Undo</button>}
             {!parcel.paid && !parcel.refundedAt && !parcel.holdKind && (
               <form className="track-form" onSubmit={(event) => { event.preventDefault(); openHold(parcel.id); }}>
                 <select value={holds[parcel.id]?.kind ?? "dispute"} onChange={(event) => setHolds({ ...holds, [parcel.id]: { kind: event.target.value, reason: holds[parcel.id]?.reason ?? "" } })}>
@@ -357,7 +368,7 @@ async function parcelAction(id: string, action: "ship" | "receive", carrier?: st
                 <button type="submit">Hold the payout</button>
               </form>
             )}
-            {parcel.receivedAt && !parcel.paid && !parcel.holdKind && <span>Received</span>}
+            {parcel.receivedAt && !parcel.paid && !parcel.holdKind && !canUndo(parcel) && <span>Received</span>}
           </article>
         ))}
       </section>

@@ -85,11 +85,53 @@ export async function sendDeliveredEmail(shipmentId: string) {
   }
 }
 
+export async function sendArrivalEmail(shipmentId: string) {
+  try {
+    const context = await parcelContext(shipmentId);
+    const buyer = context?.order?.customer_email || "";
+    if (!context || !buyer) return;
+    await deliver(
+      buyer,
+      "Has your GrandmasterTCG parcel arrived?",
+      `The courier has not shown this parcel as delivered.\n\n${context.cards || "Your cards"}\n\nIf it has arrived and matches the listing, press “I received this” on your account. If it has not arrived, or the card is wrong, open a dispute or request a refund. If you do neither, the seller is paid two days after this email.\n\n${SITE}/account`
+    );
+  } catch {
+    // A missed email must not undo the payout clock.
+  }
+}
+
+export async function sendUnpostedRefundEmail(shipmentId: string) {
+  try {
+    const context = await parcelContext(shipmentId);
+    if (!context) return;
+    const buyer = context.order?.customer_email || "";
+    const cards = context.cards || "Your cards";
+    if (buyer) {
+      await deliver(
+        buyer,
+        "Your GrandmasterTCG parcel has been refunded",
+        `The seller did not add a tracking number within 5 days.\n\n${cards}\n\nThat part of the payment has been refunded to your card.\n\n${SITE}/account`
+      );
+    }
+    const text = `No tracking number was added within 5 days, so this sale has been refunded.\n\n${cards}\n\nYou are not paid for this parcel.\n\n${SITE}/account`;
+    if (context.shipment.seller_id) {
+      const email = await userEmail(context.shipment.seller_id);
+      if (email) await deliver(email, "A GrandmasterTCG sale was refunded", text);
+    } else {
+      for (const email of await adminEmails()) {
+        await deliver(email, "A GrandmasterTCG shop sale was refunded", text);
+      }
+    }
+  } catch {
+    // A missed email must not undo the refund.
+  }
+}
+
 export async function sendHoldEmail(shipmentId: string) {
   try {
     const context = await parcelContext(shipmentId);
     if (!context) return;
-    const kind = context.shipment.hold_kind === "refund" ? "Refund request" : "Dispute";
+    const kind = context.shipment.hold_kind === "refund" ? "Refund request" : context.shipment.hold_kind === "oversold" ? "Sold out at payment" : context.shipment.hold_kind === "unposted" ? "Not posted" : "Dispute";
     const text = `${kind} on a parcel from ${context.shipment.seller_name || "GrandmasterTCG"}.\n\n${context.cards || "Cards"}\n\n${context.shipment.hold_reason || ""}\n\nOpen the shop admin page to refund the buyer or release the payout.\n\n${SITE}/admin`;
     for (const email of await adminEmails()) {
       await deliver(email, `GrandmasterTCG ${kind.toLowerCase()}`, text);
@@ -133,7 +175,7 @@ export async function remindUnpostedSales() {
       const cards = related.map((item) => `${item.quantity} × ${item.product_name}`).join("\n");
       const deadline = new Date(new Date(started).getTime() + 5 * DAY).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
       const shipTo = addressText(shipment.shipping_name, shipment.shipping_address);
-      const text = `This sale still has no tracking number.\n\n${cards || "Cards"}\n\nAdd the tracking number by ${deadline}. After that the payout is held and the shop can refund the buyer.\n\nShip to: ${shipTo || "the address on your account"}\nYou receive ${gbp(shipment.proceeds_pence)}.\n\n${SITE}/account`;
+      const text = `This sale still has no tracking number.\n\n${cards || "Cards"}\n\nAdd the tracking number by ${deadline}. After that the buyer is refunded and you are not paid.\n\nShip to: ${shipTo || "the address on your account"}\nYou receive ${gbp(shipment.proceeds_pence)}.\n\n${SITE}/account`;
       if (shipment.seller_id) {
         const email = await userEmail(shipment.seller_id);
         if (email) await deliver(email, "GrandmasterTCG sale still needs tracking", text);
@@ -154,15 +196,16 @@ export async function sendSaleEmails(orderId: string) {
     const { data: order } = await db.from("orders").select("id,customer_email,total_pence,shipping_name,shipping_address").eq("id", orderId).maybeSingle();
     if (!order) return;
     const { data: items } = await db.from("order_items").select("product_name,quantity,seller_id,unit_price_pence").eq("order_id", orderId);
-    const { data: shipments } = await db.from("shipments").select("seller_id,seller_key,seller_name,proceeds_pence").eq("order_id", orderId);
+    const { data: shipments } = await db.from("shipments").select("seller_id,seller_key,seller_name,proceeds_pence,hold_kind,refunded_at").eq("order_id", orderId);
     const lines = (items ?? []).map((item) => `${item.quantity} × ${item.product_name}`);
     const shipTo = addressText(order.shipping_name, order.shipping_address as { line1?: string; line2?: string; city?: string; postal_code?: string; country?: string } | null);
     const buyer = order.customer_email || "";
+    const oversold = (shipments ?? []).some((shipment) => shipment.hold_kind === "oversold");
     if (buyer) {
       await deliver(
         buyer,
         "Your GrandmasterTCG order",
-        `Payment received for ${gbp(order.total_pence)}.\n\n${lines.join("\n")}\n\nThe seller has 5 days to add a tracking number. You can follow the parcel from your account: ${SITE}/account`
+        `Payment received for ${gbp(order.total_pence)}.\n\n${lines.join("\n")}\n\n${oversold ? "A card sold out before payment finished. That parcel is refunded to your card." : "The seller has 5 days to add a tracking number."} You can follow the order from your account: ${SITE}/account`
       );
     }
 
@@ -170,14 +213,21 @@ export async function sendSaleEmails(orderId: string) {
     for (const shipment of shipments ?? []) {
       const related = (items ?? []).filter((item) => (item.seller_id ?? "shop") === (shipment.seller_id ?? "shop"));
       const cards = related.map((item) => `${item.quantity} × ${item.product_name}`).join("\n");
-      const text = `You sold:\n${cards || lines.join("\n")}\n\nPost within 5 days of this payment. Add the tracking number on your account, or the payout is held and the shop can refund the buyer.\n\nShip to: ${shipTo || "the address on your account"}\nYou receive ${gbp(shipment.proceeds_pence)}.\n\n${SITE}/account`;
+      const text = shipment.hold_kind === "oversold"
+        ? `This sale cannot be posted. The card sold out before payment finished.\n\n${cards || lines.join("\n")}\n\n${shipment.refunded_at ? "The buyer has been refunded." : "The buyer is being refunded."} You are not paid for this parcel.\n\n${SITE}/account`
+        : `You sold:\n${cards || lines.join("\n")}\n\nPost within 5 days of this payment. Add the tracking number on your account, or the buyer is refunded and you are not paid.\n\nShip to: ${shipTo || "the address on your account"}\nYou receive ${gbp(shipment.proceeds_pence)}.\n\n${SITE}/account`;
+      const subject = shipment.hold_kind === "oversold"
+        ? "A GrandmasterTCG sale sold out before payment"
+        : shipment.seller_id
+          ? "You have a GrandmasterTCG sale to post"
+          : "A GrandmasterTCG shop sale needs posting";
       if (shipment.seller_id) {
         const email = await userEmail(shipment.seller_id);
-        if (email) await deliver(email, "You have a GrandmasterTCG sale to post", text);
+        if (email) await deliver(email, subject, text);
       } else {
         for (const admin of admins ?? []) {
           const email = await userEmail(admin.user_id);
-          if (email) await deliver(email, "A GrandmasterTCG shop sale needs posting", text);
+          if (email) await deliver(email, subject, text);
         }
       }
     }

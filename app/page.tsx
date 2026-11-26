@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CONDITIONS, GAMES, demoCatalog, gameHue, gbp, type Product } from "@/lib/catalog";
+import { CONDITIONS, GAMES, gameHue, gbp, type Product } from "@/lib/catalog";
 import { commissionForLine } from "@/lib/commission";
 import { supabase } from "@/lib/supabase-browser";
 
@@ -25,8 +25,8 @@ function readBasket() {
 }
 
 export default function Home() {
-  const [products, setProducts] = useState<Product[]>(demoCatalog);
-  const [source, setSource] = useState<"sample" | "live">("sample");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [source, setSource] = useState<"loading" | "live" | "unavailable">("loading");
   const [q, setQ] = useState("");
   const [game, setGame] = useState<string>("All games");
   const [condition, setCondition] = useState<string>("Any condition");
@@ -63,14 +63,19 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/products")
       .then(async (response) => {
-        if (!response.ok) return;
-        const data = await response.json();
-        if (Array.isArray(data.products)) {
-          setProducts(data.products);
-          setSource("live");
+        if (!response.ok) {
+          setSource("unavailable");
+          return;
         }
+        const data = await response.json();
+        if (!Array.isArray(data.products)) {
+          setSource("unavailable");
+          return;
+        }
+        setProducts(data.products);
+        setSource("live");
       })
-      .catch(() => {});
+      .catch(() => setSource("unavailable"));
   }, []);
 
   useEffect(() => {
@@ -253,9 +258,8 @@ export default function Home() {
       </header>
 
       <main className="mk-shell mk-main">
-        {source === "sample" && (
-          <p className="mk-banner">Sample market data is on display. Live stock from your catalogue replaces it automatically, and sample cards cannot be purchased.</p>
-        )}
+        {source === "loading" && <p className="mk-banner">Loading the market.</p>}
+        {source === "unavailable" && <p className="mk-banner">The market could not be loaded. Refresh the page to try again.</p>}
         {notice && <p className="mk-notice" role="status">{notice}</p>}
 
         <section className="mk-hero">
@@ -351,7 +355,7 @@ export default function Home() {
 
             {visible.length === 0 ? (
               <div className="mk-empty">
-                <p>No listings match those filters.</p>
+                <p>{source === "live" && !q && game === "All games" && condition === "Any condition" && rarity === "Any rarity" && maxPounds.trim() === "" ? "No cards are listed right now." : "No listings match those filters."}</p>
                 <button onClick={resetFilters}>Clear filters</button>
               </div>
             ) : view === "list" ? (
@@ -430,6 +434,7 @@ export default function Home() {
           <strong>GrandmasterTCG</strong>
           <span>Independent UK trading-card retailer. Game names and card names are trademarks of their owners.</span>
           <a href="/terms">Terms and conditions</a>
+          <a href="/privacy">Privacy notice</a>
           <span>© {new Date().getFullYear()}</span>
         </div>
       </footer>
@@ -495,11 +500,11 @@ export default function Home() {
                   ))}
                 </ul>
                 <p className="mk-total"><span>{count} item{count === 1 ? "" : "s"}</span><strong>{gbp(total)}</strong></p>
-                <p className="mk-fine">GrandmasterTCG keeps {gbp(fee)} from this sale. That is 2% of each card, and never more than £100 per card. The seller also pays the card processing fee. The seller must add tracking within 5 days. Sellers are paid when you confirm the tracked parcel arrived, or 2 days after the courier shows it delivered, unless you dispute or request a refund.</p>
+                <p className="mk-fine">GrandmasterTCG keeps {gbp(fee)} from this sale. That is 2% of each card, and never more than £100 per card. The seller also pays the card processing fee. The seller must add tracking within 5 days. Sellers are paid an hour after you confirm the tracked parcel arrived, or 2 days after the courier shows it delivered, unless you dispute or request a refund. You can undo that confirmation for an hour.</p>
                 <button className="mk-checkout" disabled={busy} onClick={checkout}>
                   {busy ? "Starting checkout…" : "Secure checkout"}
                 </button>
-                <p className="mk-fine">Sign in to check out. Stripe collects the UK shipping address. Sample listings cannot be purchased.</p>
+                <p className="mk-fine">Sign in to check out. Stripe collects the UK shipping address.</p>
               </>
             )}
           </aside>

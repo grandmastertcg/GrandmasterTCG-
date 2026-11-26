@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { userFromRequest } from "@/lib/require-user";
 import { CARRIERS, carrierTrackUrl, deliveryMoment, lookupTracking, validTracking } from "@/lib/shipping";
-import { paySeller, recordDelivery, saveTracking } from "@/lib/fulfillment";
+import { recordDelivery, saveTracking } from "@/lib/fulfillment";
 import { sendHoldEmail, sendTrackingEmail } from "@/lib/mail";
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   const body = await request.json();
   const action = String(body.action ?? "");
   const db = supabaseAdmin();
-  const { data: shipment } = await db.from("shipments").select("id,seller_id,seller_key,received_at,transfer_id,released_at,order_id").eq("id", id).maybeSingle();
+  const { data: shipment } = await db.from("shipments").select("id,seller_id,seller_key,received_at,refunded_at,transfer_id,released_at,order_id").eq("id", id).maybeSingle();
   if (!shipment) return NextResponse.json({ error: "Unknown parcel." }, { status: 404 });
 
   const { data: order } = await db.from("orders").select("buyer_id,status").eq("id", shipment.order_id).maybeSingle();
@@ -70,7 +70,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const { data: admin } = await db.from("admin_users").select("user_id").eq("user_id", user.id).maybeSingle();
     const ownsSale = shipment.seller_id === user.id || (shipment.seller_key === "shop" && Boolean(admin));
     if (!ownsSale) return NextResponse.json({ error: "You can only ship your own sales." }, { status: 403 });
-    if (shipment.received_at || shipment.transfer_id || shipment.released_at) return NextResponse.json({ error: "This parcel has already been received." }, { status: 400 });
+    if (shipment.refunded_at) return NextResponse.json({ error: "This parcel has been refunded." }, { status: 400 });
+    if (shipment.received_at) return NextResponse.json({ error: "This parcel has already been received." }, { status: 400 });
 
     const carrier = String(body.carrier ?? "");
     const trackingNumber = String(body.trackingNumber ?? "").trim();
@@ -81,12 +82,28 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ error: "Enter a tracking number. Every parcel must be tracked." }, { status: 400 });
     }
 
-    const { data: before } = await db.from("shipments").select("tracking_number").eq("id", id).maybeSingle();
-    const { error } = await db.from("shipments").update({
+    const { data: before } = await db.from("shipments").select("tracking_number,shipped_at").eq("id", id).maybeSingle();
+    const numberChanged = Boolean(before?.tracking_number && before.tracking_number !== trackingNumber);
+    const update: {
+      carrier: string;
+      tracking_number: string;
+      shipped_at: string;
+      tracking_status?: null;
+      tracking_events?: null;
+      tracked_at?: null;
+      delivered_at?: null;
+    } = {
       carrier,
       tracking_number: trackingNumber,
-      shipped_at: new Date().toISOString()
-    }).eq("id", id);
+      shipped_at: before?.shipped_at ?? new Date().toISOString()
+    };
+    if (numberChanged) {
+      update.tracking_status = null;
+      update.tracking_events = null;
+      update.tracked_at = null;
+      if (!shipment.transfer_id && !shipment.released_at) update.delivered_at = null;
+    }
+    const { error } = await db.from("shipments").update(update).eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!before?.tracking_number) await sendTrackingEmail(id);
     return NextResponse.json({ ok: true });
@@ -131,22 +148,26 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (!current?.tracking_number) return NextResponse.json({ error: "This parcel has no tracking number yet." }, { status: 400 });
     if (current.hold_at) return NextResponse.json({ error: "This parcel is on hold. Close the dispute or refund before confirming delivery." }, { status: 400 });
     if (!current.received_at) {
-      const { error } = await db.from("shipments").update({ received_at: new Date().toISOString() }).eq("id", id);
+      const { error } = await db.from("shipments").update({ received_at: new Date().toISOString() }).eq("id", id).is("received_at", null);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    try {
-      await paySeller(id);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Stripe could not pay the seller yet.";
-      await db.from("shipments").update({ payout_error: message }).eq("id", id);
-      return NextResponse.json({ error: message }, { status: 400 });
-    }
-    const { data: after } = await db.from("shipments").select("transfer_id,payout_error,seller_key").eq("id", id).maybeSingle();
-    const paid = Boolean(after?.transfer_id) || after?.seller_key === "shop";
     return NextResponse.json({
       ok: true,
-      message: paid ? "Delivery confirmed and the seller has been paid." : after?.payout_error || "Delivery confirmed. The payout waits until the seller finishes Stripe setup."
+      message: "Marked as received. You can undo this for an hour. The seller is paid after that."
     });
+  }
+
+  if (action === "undo") {
+    if (order?.buyer_id !== user.id) return NextResponse.json({ error: "Only the buyer can undo this." }, { status: 403 });
+    const { data: current } = await db.from("shipments").select("received_at,transfer_id,released_at").eq("id", id).maybeSingle();
+    if (!current?.received_at) return NextResponse.json({ error: "This parcel is not marked as received." }, { status: 400 });
+    if (current.transfer_id || current.released_at) return NextResponse.json({ error: "The seller has already been paid." }, { status: 400 });
+    if (Date.now() - new Date(current.received_at).getTime() >= 60 * 60 * 1000) {
+      return NextResponse.json({ error: "The hour to undo this has passed." }, { status: 400 });
+    }
+    const { error } = await db.from("shipments").update({ received_at: null }).eq("id", id).is("transfer_id", null).is("released_at", null);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, message: "Confirmation removed. The seller has not been paid." });
   }
 
   return NextResponse.json({ error: "Unknown action." }, { status: 400 });

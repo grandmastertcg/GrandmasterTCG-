@@ -1,5 +1,5 @@
 import { commissionOnSale } from "@/lib/commission";
-import { sendDeliveredEmail, sendSaleEmails } from "@/lib/mail";
+import { sendArrivalEmail, sendDeliveredEmail, sendSaleEmails, sendUnpostedRefundEmail } from "@/lib/mail";
 import { deliveryMoment, lookupTracking } from "@/lib/shipping";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
@@ -10,17 +10,34 @@ export function sellerKey(sellerId: string | null | undefined) {
 
 const INSPECTION_MS = 2 * 24 * 60 * 60 * 1000;
 const POST_DEADLINE_MS = 5 * 24 * 60 * 60 * 1000;
+const RECEIVE_UNDO_MS = 60 * 60 * 1000;
+const STALL_ASK_MS = 7 * 24 * 60 * 60 * 1000;
+const STALL_QUIET_MS = 2 * 24 * 60 * 60 * 1000;
 
-function payoutDue(shipment: { received_at: string | null; delivered_at: string | null; refunded_at?: string | null }) {
+type DueShipment = {
+  id: string;
+  received_at: string | null;
+  delivered_at: string | null;
+  refunded_at?: string | null;
+  tracking_number?: string | null;
+  shipped_at?: string | null;
+  arrival_asked_at?: string | null;
+};
+
+function payoutDue(shipment: DueShipment) {
   if (shipment.refunded_at) return false;
-  if (shipment.received_at) return true;
-  if (!shipment.delivered_at) return false;
-  return Date.now() - new Date(shipment.delivered_at).getTime() >= INSPECTION_MS;
+  if (shipment.received_at) return Date.now() - new Date(shipment.received_at).getTime() >= RECEIVE_UNDO_MS;
+  if (shipment.delivered_at) return Date.now() - new Date(shipment.delivered_at).getTime() >= INSPECTION_MS;
+  if (shipment.tracking_number && shipment.arrival_asked_at) {
+    return Date.now() - new Date(shipment.arrival_asked_at).getTime() >= STALL_QUIET_MS;
+  }
+  return false;
 }
 
 function holdMessage(kind: string | null) {
   if (kind === "refund") return "Payout is on hold because the buyer requested a refund.";
   if (kind === "unposted") return "Payout is on hold because this parcel was not posted within 5 days.";
+  if (kind === "oversold") return "Payout is on hold because the card was no longer in stock when payment finished.";
   return "Payout is on hold because the buyer opened a dispute.";
 }
 
@@ -106,7 +123,7 @@ export async function finalizeCheckout(sessionId: string) {
   if (session.payment_status !== "paid") throw new Error("This payment is not complete.");
 
   const db = supabaseAdmin();
-  const { data: order, error } = await db.from("orders").select("id,status,stock_adjusted").eq("stripe_session_id", sessionId).maybeSingle();
+  const { data: order, error } = await db.from("orders").select("id,status").eq("stripe_session_id", sessionId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!order) throw new Error("This checkout has no order record.");
 
@@ -147,17 +164,9 @@ export async function finalizeCheckout(sessionId: string) {
     await db.from("orders").update({ charge_id: chargeId }).eq("id", order.id).is("charge_id", null);
   }
 
-  if (!order.stock_adjusted) {
-    const { data: items } = await db.from("order_items").select("product_id,quantity").eq("order_id", order.id);
-    for (const item of items ?? []) {
-      if (!item.product_id) continue;
-      const { data: product } = await db.from("products").select("stock").eq("id", item.product_id).maybeSingle();
-      if (!product) continue;
-      const stock = Math.max(0, product.stock - item.quantity);
-      await db.from("products").update({ stock }).eq("id", item.product_id);
-    }
-    await db.from("orders").update({ stock_adjusted: true }).eq("id", order.id);
-  }
+  const { data: claimed, error: claimError } = await db.from("orders").update({ stock_adjusted: true }).eq("id", order.id).eq("stock_adjusted", false).select("id").maybeSingle();
+  if (claimError) throw new Error(claimError.message);
+  if (claimed) await takeOrderStock(order.id);
 
   await applyStripeFee(order.id);
   if (justPaid) await sendSaleEmails(order.id);
@@ -165,7 +174,14 @@ export async function finalizeCheckout(sessionId: string) {
 
 export async function paySeller(shipmentId: string) {
   const db = supabaseAdmin();
-  const { data: shipment, error } = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,received_at,delivered_at,refunded_at,shipped_at,hold_at,hold_kind,transfer_id,released_at,order_id").eq("id", shipmentId).maybeSingle();
+  const loaded = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,received_at,delivered_at,refunded_at,shipped_at,tracking_number,arrival_asked_at,hold_at,hold_kind,transfer_id,released_at,order_id").eq("id", shipmentId).maybeSingle();
+  let shipment = loaded.data;
+  let error = loaded.error;
+  if (error && /arrival_asked_at/.test(error.message)) {
+    const fallback = await db.from("shipments").select("id,seller_id,seller_key,proceeds_pence,stripe_fee_pence,received_at,delivered_at,refunded_at,shipped_at,tracking_number,hold_at,hold_kind,transfer_id,released_at,order_id").eq("id", shipmentId).maybeSingle();
+    shipment = fallback.data ? { ...fallback.data, arrival_asked_at: null } : null;
+    error = fallback.error;
+  }
   if (error || !shipment) throw new Error(error?.message || "Shipment not found.");
   if (shipment.refunded_at || shipment.transfer_id || shipment.released_at) return;
   if (shipment.hold_at) {
@@ -330,16 +346,129 @@ export async function holdUnpostedSales() {
   }
   for (const shipment of due) {
     if (new Date(shipment.started).getTime() > cutoff) continue;
-    await db.from("shipments").update({
+    const { data: held, error: holdError } = await db.from("shipments").update({
       hold_kind: "unposted",
       hold_reason: "No tracking number was added within 5 days of payment.",
       hold_at: new Date().toISOString(),
       payout_error: holdMessage("unposted")
-    }).eq("id", shipment.id).is("tracking_number", null).is("hold_at", null);
+    }).eq("id", shipment.id).is("tracking_number", null).is("hold_at", null).select("id").maybeSingle();
+    if (holdError || !held) continue;
+    await refundUnpostedParcel(held.id);
+  }
+}
+
+async function refundHeldParcel(shipmentId: string, emailed: (shipmentId: string) => Promise<void>) {
+  const db = supabaseAdmin();
+  try {
+    await refundShipment(shipmentId);
+  } catch (failure) {
+    const message = failure instanceof Error ? failure.message : "The refund could not be sent yet.";
+    await db.from("shipments").update({ payout_error: message }).eq("id", shipmentId);
+    return;
+  }
+  try {
+    await emailed(shipmentId);
+  } catch {
+    // The refund has already been sent.
+  }
+}
+
+async function refundUnpostedParcel(shipmentId: string) {
+  await refundHeldParcel(shipmentId, sendUnpostedRefundEmail);
+}
+
+async function refundUnpostedParcels() {
+  const db = supabaseAdmin();
+  const { data, error } = await db.from("shipments").select("id").eq("hold_kind", "unposted").is("tracking_number", null).is("refunded_at", null);
+  if (error) {
+    if (/hold_kind|refunded_at/.test(error.message)) return;
+    throw new Error(error.message);
+  }
+  for (const shipment of data ?? []) await refundUnpostedParcel(shipment.id);
+}
+
+const DUE_COLUMNS = "id,received_at,delivered_at,refunded_at,tracking_number,shipped_at,arrival_asked_at";
+const DUE_COLUMNS_FALLBACK = "id,received_at,delivered_at,refunded_at,tracking_number,shipped_at";
+
+async function selectUnpaid(filter: (columns: string) => PromiseLike<{ data: DueShipment[] | null; error: { message: string } | null }>) {
+  const first = await filter(DUE_COLUMNS);
+  if (first.error && /arrival_asked_at/.test(first.error.message)) {
+    const second = await filter(DUE_COLUMNS_FALLBACK);
+    if (second.error) return { data: null, error: second.error };
+    return { data: (second.data ?? []).map((row) => ({ ...row, arrival_asked_at: null })), error: null };
+  }
+  return { data: first.data, error: first.error };
+}
+
+async function payDueShipments(rows: DueShipment[] | null) {
+  const db = supabaseAdmin();
+  for (const shipment of rows ?? []) {
+    if (!payoutDue(shipment)) continue;
+    try {
+      await paySeller(shipment.id);
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : "Stripe could not pay the seller yet.";
+      await db.from("shipments").update({ payout_error: message }).eq("id", shipment.id);
+    }
+  }
+}
+
+export async function releaseSellerPayouts(sellerId: string) {
+  const db = supabaseAdmin();
+  const { data, error } = await selectUnpaid((columns) => db.from("shipments").select(columns).eq("seller_id", sellerId).is("transfer_id", null).is("released_at", null).is("hold_at", null).is("refunded_at", null) as PromiseLike<{ data: DueShipment[] | null; error: { message: string } | null }>);
+  if (error) {
+    if (/released_at|hold_at|delivered_at|refunded_at/.test(error.message)) return;
+    throw new Error(error.message);
+  }
+  await payDueShipments(data);
+}
+
+async function releaseBuyerPayouts(buyerId: string) {
+  const db = supabaseAdmin();
+  const buyerColumns = (columns: string) => columns.includes("arrival_asked_at")
+    ? "id,received_at,delivered_at,refunded_at,tracking_number,shipped_at,arrival_asked_at,orders!inner(buyer_id)"
+    : "id,received_at,delivered_at,refunded_at,tracking_number,shipped_at,orders!inner(buyer_id)";
+  const { data, error } = await selectUnpaid((columns) => db.from("shipments").select(buyerColumns(columns)).eq("orders.buyer_id", buyerId).is("transfer_id", null).is("released_at", null).is("hold_at", null).is("refunded_at", null) as PromiseLike<{ data: DueShipment[] | null; error: { message: string } | null }>);
+  if (error) {
+    if (/released_at|hold_at|delivered_at|refunded_at/.test(error.message)) return;
+    throw new Error(error.message);
+  }
+  await payDueShipments(data);
+}
+
+export async function settleAccountPayouts(userId: string) {
+  try {
+    await releaseSellerPayouts(userId);
+    await releaseBuyerPayouts(userId);
+  } catch {
+    // One seller's payout must not stop the account page loading.
+  }
+}
+
+async function askStalledParcels() {
+  const db = supabaseAdmin();
+  const { data, error } = await db.from("shipments").select("id,shipped_at,tracking_number").not("tracking_number", "is", null).is("delivered_at", null).is("received_at", null).is("arrival_asked_at", null).is("hold_at", null).is("refunded_at", null).is("transfer_id", null).is("released_at", null);
+  if (error) {
+    if (/arrival_asked_at|delivered_at|received_at|hold_at|refunded_at|released_at/.test(error.message)) return;
+    throw new Error(error.message);
+  }
+  const cutoff = Date.now() - STALL_ASK_MS;
+  for (const shipment of data ?? []) {
+    if (!shipment.shipped_at || new Date(shipment.shipped_at).getTime() > cutoff) continue;
+    const askedAt = new Date().toISOString();
+    const { data: saved, error: saveError } = await db.from("shipments").update({ arrival_asked_at: askedAt }).eq("id", shipment.id).is("arrival_asked_at", null).is("delivered_at", null).is("received_at", null).select("id").maybeSingle();
+    if (saveError || !saved) continue;
+    await sendArrivalEmail(shipment.id);
   }
 }
 
 export async function releaseDuePayouts() {
+  try {
+    await refundOversoldParcels();
+    await refundUnpostedParcels();
+  } catch {
+    // A missed refund must not stop payouts that are already due.
+  }
   try {
     await holdUnpostedSales();
   } catch {
@@ -350,21 +479,93 @@ export async function releaseDuePayouts() {
   } catch {
     // A courier lookup can fail. Buyer confirmation can still pay the seller.
   }
+  try {
+    await askStalledParcels();
+  } catch {
+    // A missed arrival email must not stop payouts that are already due.
+  }
   const db = supabaseAdmin();
-  const { data, error } = await db.from("shipments").select("id,received_at,delivered_at,refunded_at,hold_at,transfer_id,released_at").is("transfer_id", null).is("released_at", null).is("hold_at", null).is("refunded_at", null);
+  const { data, error } = await selectUnpaid((columns) => db.from("shipments").select(columns).is("transfer_id", null).is("released_at", null).is("hold_at", null).is("refunded_at", null) as PromiseLike<{ data: DueShipment[] | null; error: { message: string } | null }>);
   if (error) {
     if (/released_at|hold_at|delivered_at|refunded_at/.test(error.message)) return;
     throw new Error(error.message);
   }
-  for (const shipment of data ?? []) {
-    if (!payoutDue(shipment)) continue;
-    try {
-      await paySeller(shipment.id);
-    } catch (failure) {
-      const message = failure instanceof Error ? failure.message : "Stripe could not pay the seller yet.";
-      await db.from("shipments").update({ payout_error: message }).eq("id", shipment.id);
-    }
+  await payDueShipments(data);
+}
+
+async function takeStock(productId: string, quantity: number) {
+  const db = supabaseAdmin();
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { data: product, error } = await db.from("products").select("stock").eq("id", productId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!product || product.stock < quantity) return false;
+    const { data: taken, error: updateError } = await db.from("products").update({ stock: product.stock - quantity }).eq("id", productId).eq("stock", product.stock).select("id").maybeSingle();
+    if (updateError) throw new Error(updateError.message);
+    if (taken) return true;
   }
+  return false;
+}
+
+async function restoreStock(productId: string, quantity: number) {
+  const db = supabaseAdmin();
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { data: product, error } = await db.from("products").select("stock").eq("id", productId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!product) return;
+    const { data: restored, error: updateError } = await db.from("products").update({ stock: product.stock + quantity }).eq("id", productId).eq("stock", product.stock).select("id").maybeSingle();
+    if (updateError) throw new Error(updateError.message);
+    if (restored) return;
+  }
+}
+
+async function takeOrderStock(orderId: string) {
+  const db = supabaseAdmin();
+  const { data: items, error } = await db.from("order_items").select("product_id,quantity,seller_id").eq("order_id", orderId);
+  if (error) throw new Error(error.message);
+  const groups = new Map<string, { productId: string; quantity: number }[]>();
+  for (const item of items ?? []) {
+    if (!item.product_id) continue;
+    const key = sellerKey(item.seller_id);
+    const lines = groups.get(key) ?? [];
+    lines.push({ productId: item.product_id, quantity: item.quantity });
+    groups.set(key, lines);
+  }
+  for (const [key, lines] of groups) {
+    const taken: { productId: string; quantity: number }[] = [];
+    let short = false;
+    for (const line of lines) {
+      const ok = await takeStock(line.productId, line.quantity);
+      if (!ok) {
+        short = true;
+        break;
+      }
+      taken.push(line);
+    }
+    if (!short) continue;
+    for (const line of taken) await restoreStock(line.productId, line.quantity);
+    const { data: shipment, error: holdError } = await db.from("shipments").update({
+      hold_kind: "oversold",
+      hold_reason: "This card sold out before the payment finished.",
+      hold_at: new Date().toISOString(),
+      payout_error: holdMessage("oversold")
+    }).eq("order_id", orderId).eq("seller_key", key).is("hold_at", null).is("transfer_id", null).is("released_at", null).select("id").maybeSingle();
+    if (holdError) throw new Error(holdError.message);
+    if (shipment) await refundOversoldParcel(shipment.id);
+  }
+}
+
+async function refundOversoldParcel(shipmentId: string) {
+  await refundHeldParcel(shipmentId, async () => {});
+}
+
+async function refundOversoldParcels() {
+  const db = supabaseAdmin();
+  const { data, error } = await db.from("shipments").select("id").eq("hold_kind", "oversold").is("refunded_at", null);
+  if (error) {
+    if (/hold_kind|refunded_at/.test(error.message)) return;
+    throw new Error(error.message);
+  }
+  for (const shipment of data ?? []) await refundOversoldParcel(shipment.id);
 }
 
 function splitPence(total: number, weights: number[]) {

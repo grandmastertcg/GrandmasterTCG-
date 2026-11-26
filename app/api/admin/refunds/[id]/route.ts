@@ -22,7 +22,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (action === "release") {
       await releaseHold(id);
       await paySeller(id);
-      return NextResponse.json({ ok: true, message: "The request is closed. The seller is paid when the buyer confirms, or 2 days after the courier shows the parcel delivered." });
+      return NextResponse.json({ ok: true, message: "The request is closed. The seller is paid an hour after the buyer confirms, or 2 days after the courier shows the parcel delivered." });
     }
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (error) {
