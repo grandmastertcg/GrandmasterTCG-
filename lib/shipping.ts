@@ -1,5 +1,92 @@
 export const CARRIERS = ["Royal Mail", "Parcelforce", "Evri", "DPD", "UPS", "DHL", "FedEx", "Other"] as const;
 
+export type PostageSize = {
+  id: string;
+  label: string;
+  weight: string;
+  onlinePence: number;
+  counterPence: number;
+};
+
+/** Buyer pays the online price. The Post Office column is what the counter charges. */
+export const POSTAGE_SIZES: PostageSize[] = [
+  { id: "large-letter", label: "Large Letter", weight: "750g at a Post Office, or 1kg online", onlinePence: 290, counterPence: 345 },
+  { id: "small-parcel", label: "Small Parcel", weight: "2kg", onlinePence: 375, counterPence: 470 },
+  { id: "medium-parcel-2kg", label: "Medium Parcel (2kg)", weight: "2kg", onlinePence: 570, counterPence: 760 },
+  { id: "medium-parcel-10kg", label: "Medium Parcel (10kg)", weight: "10kg", onlinePence: 755, counterPence: 960 }
+];
+
+export function postageSize(id: string | null | undefined) {
+  return POSTAGE_SIZES.find((size) => size.id === id) ?? POSTAGE_SIZES[0];
+}
+
+/** Up to this many raw cards stay a Large Letter. The next card moves the parcel to a Small Parcel. */
+export const RAW_LARGE_LETTER_MAX = 10;
+
+/** A graded slab is thicker than a raw card. Up to this many stay a Large Letter. */
+export const GRADED_LARGE_LETTER_MAX = 3;
+
+/** Card value above this, for one seller, is sent Special Delivery Guaranteed by 1pm. */
+export const INSURED_OVER_PENCE = 7500;
+
+export const SPECIAL_DELIVERY = [
+  { id: "g100", weight: "Up to 100g", pence: 1035 },
+  { id: "g500", weight: "Up to 500g", pence: 1135 },
+  { id: "kg1", weight: "Up to 1kg", pence: 1245 },
+  { id: "kg2", weight: "Up to 2kg", pence: 1655 },
+  { id: "kg10", weight: "Up to 10kg", pence: 2395 }
+] as const;
+
+export const EXTRA_COVER = [
+  { overPence: 75000, addPence: 300, cover: "£1,000" },
+  { overPence: 100000, addPence: 1000, cover: "£2,500" }
+] as const;
+
+export type ParcelCard = {
+  postageSize?: string | null;
+  quantity: number;
+  unitPricePence: number;
+  graded?: boolean;
+};
+
+export type ParcelQuote = {
+  pence: number;
+  label: string;
+  insured: boolean;
+};
+
+function specialDelivery(tierId: string, countOnly: boolean, cardPence: number) {
+  const bandId = tierId === "medium-parcel-10kg"
+    ? "kg10"
+    : tierId === "medium-parcel-2kg" || (tierId === "small-parcel" && !countOnly)
+      ? "kg2"
+      : tierId === "small-parcel"
+        ? "g500"
+        : "g100";
+  const band = SPECIAL_DELIVERY.find((item) => item.id === bandId) ?? SPECIAL_DELIVERY[0];
+  const extra = [...EXTRA_COVER].reverse().find((item) => cardPence > item.overPence);
+  const cover = extra ? `, cover up to ${extra.cover}` : ", cover up to £750";
+  return {
+    pence: band.pence + (extra?.addPence ?? 0),
+    label: `Special Delivery by 1pm, ${band.weight.toLowerCase()}${cover}`
+  };
+}
+
+/** One parcel per seller. The shop chooses the size. Up to 10 raw cards stay a Large Letter. Over £75 uses Special Delivery. */
+export function parcelQuote(cards: ParcelCard[]): ParcelQuote {
+  if (!cards.length) return { pence: 0, label: "Postage", insured: false };
+  const raw = cards.reduce((sum, card) => sum + (card.graded ? 0 : card.quantity), 0);
+  const graded = cards.reduce((sum, card) => sum + (card.graded ? card.quantity : 0), 0);
+  const cardPence = cards.reduce((sum, card) => sum + card.unitPricePence * card.quantity, 0);
+  const bumped = raw > RAW_LARGE_LETTER_MAX || graded > GRADED_LARGE_LETTER_MAX;
+  const tier = postageSize(bumped ? "small-parcel" : "large-letter");
+  if (cardPence <= INSURED_OVER_PENCE) {
+    return { pence: tier.onlinePence, label: tier.label, insured: false };
+  }
+  const insured = specialDelivery(tier.id, bumped, cardPence);
+  return { pence: insured.pence, label: insured.label, insured: true };
+}
+
 const CARRIER_CODE: Record<string, number> = {
   "Royal Mail": 11031,
   Parcelforce: 11033,

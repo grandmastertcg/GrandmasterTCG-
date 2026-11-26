@@ -88,6 +88,10 @@ a { color: inherit; }
 .mk-view button.is-on { background: #f6edd6; }
 
 .mk-table { display: grid; gap: 8px; }
+.postage-rates { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 14px; }
+.postage-rates caption { caption-side: top; text-align: left; margin-bottom: 8px; color: #b7c3d4; }
+.postage-rates th, .postage-rates td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2c3c50; }
+.postage-rates th { color: #f3d48a; font-weight: 700; }
 .mk-row { display: grid; grid-template-columns: minmax(220px, 1.6fr) minmax(140px, 1fr) 120px 110px 90px 72px; gap: 10px; align-items: center; background: white; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; cursor: pointer; }
 .mk-row:hover, .mk-row.is-on, .mk-card:hover, .mk-picks button:hover { border-color: #c9b07a; }
 .mk-head { background: transparent; border: 0; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; cursor: default; padding-bottom: 0; }

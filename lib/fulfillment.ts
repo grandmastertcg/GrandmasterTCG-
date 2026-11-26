@@ -1,6 +1,7 @@
 import { commissionOnSale } from "@/lib/commission";
 import { sendArrivalEmail, sendDeliveredEmail, sendPaidEmail, sendSaleEmails, sendUnpostedRefundEmail } from "@/lib/mail";
-import { deliveryMoment, lookupTracking } from "@/lib/shipping";
+import { saleCondition } from "@/lib/catalog";
+import { deliveryMoment, lookupTracking, parcelQuote } from "@/lib/shipping";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
 
@@ -50,6 +51,8 @@ type ProductRow = {
   stock: number;
   seller_id: string | null;
   seller_name: string | null;
+  postage_size?: string | null;
+  condition?: string | null;
 };
 
 export async function createPendingOrder(input: {
@@ -102,6 +105,20 @@ export async function createPendingOrder(input: {
     current.proceeds += line.lineTotal - line.commission_pence;
     current.commission += line.commission_pence;
     groups.set(key, current);
+  }
+  for (const [key, group] of groups) {
+    const cards = lines
+      .filter((line) => sellerKey(line.seller_id) === key)
+      .map((line) => {
+        const product = input.products.find((row) => row.id === line.product_id);
+        return {
+          postageSize: product?.postage_size,
+          quantity: line.quantity,
+          unitPricePence: line.unit_price_pence,
+          graded: saleCondition(product?.condition) == null
+        };
+      });
+    group.proceeds += parcelQuote(cards).pence;
   }
 
   const shipments = [...groups.entries()].map(([key, group]) => ({

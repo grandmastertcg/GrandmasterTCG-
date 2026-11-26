@@ -16,6 +16,7 @@ create table if not exists public.products (
   active boolean not null default true,
   seller_id uuid,
   seller_name text,
+  postage_size text not null default 'large-letter',
   created_at timestamptz not null default now()
 );
 
@@ -44,4 +45,7 @@ create table if not exists public.order_items (
 );
 
 alter table public.orders enable row level security;
+
+grant select, insert, update, delete on table public.orders to service_role;
+grant select, insert, update, delete on table public.order_items to service_role;
 alter table public.order_items enable row level security;

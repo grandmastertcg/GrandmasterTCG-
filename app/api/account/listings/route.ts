@@ -5,7 +5,7 @@ import { SALE_GAMES, conditionLabel, conditionNote, languagesFor, saleCondition,
 import { GRADERS, GRADES, gradeLabel } from "@/lib/grades";
 import { ownCardPhoto } from "@/lib/photos";
 
-const columns = "id,name,game,set_name,card_number,rarity,condition,grader,price_pence,stock,image_url,active,seller_business,language,created_at";
+const columns = "id,name,game,set_name,card_number,rarity,condition,grader,price_pence,stock,image_url,active,seller_business,language,postage_size,created_at";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,14 +13,22 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
 
     const db = supabaseAdmin();
-    const { data, error } = await db.from("products").select(columns).eq("seller_id", user.id).order("created_at", { ascending: false });
+    const withPostage = await db.from("products").select(columns).eq("seller_id", user.id).order("created_at", { ascending: false });
+    const loaded = withPostage.error && /postage_size/.test(withPostage.error.message)
+      ? await db.from("products").select(columns.replace(",postage_size", "")).eq("seller_id", user.id).order("created_at", { ascending: false })
+      : withPostage;
+    const { data, error } = loaded;
     if (error && /grader|seller_business|language/.test(error.message)) {
       const fallback = await db.from("products").select("id,name,game,set_name,card_number,rarity,condition,price_pence,stock,image_url,active,created_at").eq("seller_id", user.id).order("created_at", { ascending: false });
       if (fallback.error) throw fallback.error;
       return NextResponse.json({ listings: (fallback.data ?? []).map((listing) => ({ ...listing, condition: conditionLabel(listing.condition) })) });
     }
     if (error) throw error;
-    return NextResponse.json({ listings: (data ?? []).map((listing) => ({ ...listing, condition: conditionLabel(listing.condition) })) });
+    const listings = (data ?? []).flatMap((listing) => {
+      if (!listing || typeof listing !== "object" || !("condition" in listing)) return [];
+      return [{ ...listing, condition: conditionLabel(String(listing.condition)) }];
+    });
+    return NextResponse.json({ listings });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Listings could not be loaded.";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -103,33 +111,36 @@ export async function POST(request: NextRequest) {
     if (!selling) {
       return NextResponse.json({ error: "Say whether you are a private seller or a business." }, { status: 400 });
     }
-    const { data, error } = await supabaseAdmin()
-      .from("products")
-      .insert({
-        name,
-        game,
-        set_name: setName,
-        card_number: cardNumber,
-        rarity,
-        condition,
-        grader,
-        grade,
-        cert_number: certNumber,
-        price_pence: pricePence,
-        stock,
-        image_url: imageUrl || null,
-        back_image_url: backImageUrl || null,
-        active: true,
-        seller_id: user.id,
-        seller_name: sellerName(user),
-        seller_business: selling === "business",
-        language
-      })
-      .select("id")
-      .single();
+    const row = {
+      name,
+      game,
+      set_name: setName,
+      card_number: cardNumber,
+      rarity,
+      condition,
+      grader,
+      grade,
+      cert_number: certNumber,
+      price_pence: pricePence,
+      stock,
+      image_url: imageUrl || null,
+      back_image_url: backImageUrl || null,
+      active: true,
+      seller_id: user.id,
+      seller_name: sellerName(user),
+      seller_business: selling === "business",
+      language,
+        postage_size: "large-letter"
+    };
+    let saved = await supabaseAdmin().from("products").insert(row).select("id").single();
+    if (saved.error && /postage_size/.test(saved.error.message)) {
+      const { postage_size: _postage, ...withoutPostage } = row;
+      saved = await supabaseAdmin().from("products").insert(withoutPostage).select("id").single();
+    }
+    const { data, error } = saved;
 
     if (error) {
-      const missingColumn = /seller_id|seller_name|seller_business|grader|grade|cert_number|back_image_url|language/.test(error.message);
+      const missingColumn = /seller_id|seller_name|seller_business|grader|grade|cert_number|back_image_url|language|postage_size/.test(error.message);
       return NextResponse.json(
         { error: missingColumn ? "Card photos and grades are not enabled in the database yet." : "Unable to save this listing." },
         { status: 500 }

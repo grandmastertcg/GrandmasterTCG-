@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { POKEMON_NOTES, SALE_GAMES, cardLanguage, conditionLabel, conditionNote, conditionsFor, gbp, languagesFor, saleCondition } from "@/lib/catalog";
 import { commissionOnSale } from "@/lib/commission";
+import { PostageRates } from "@/components/postage-rates";
 import { CARRIERS } from "@/lib/shipping";
 import { GRADERS, GRADES } from "@/lib/grades";
 
@@ -38,6 +39,7 @@ type Listing = {
   active: boolean;
   seller_business?: boolean | null;
   language?: string | null;
+  postage_size?: string | null;
 };
 
 const BASKET_KEY = "gmtcg-basket";
@@ -516,7 +518,9 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
               </select>
             </label>
             <label>Price (£)<input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required /></label>
-            {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)} before the card processing fee. The shop keeps {gbp(priceSplit(form.price)!.fee)}.</p>}
+            <PostageRates />
+            <p>You do not choose the postage. The shop adds it for the buyer. Cards from you in the same order go in one parcel and the buyer pays postage once. Up to 10 raw cards stay a Large Letter. An 11th raw card, or a 4th graded card, moves the parcel to a Small Parcel. If your cards in the order are over £75, the buyer pays Special Delivery by 1pm instead, and that includes cover up to £750. Buy the label online. For tracked postage, a Post Office counter costs more, and that difference is yours. The postage the buyer paid is added to your payout.</p>
+            {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)} from the card before the card processing fee. The shop keeps {gbp(priceSplit(form.price)!.fee)}. Postage is added on top when the buyer pays, and it is included in your payout.</p>}
             <label>Quantity<input type="number" min={1} max={99} value={form.graded ? "1" : form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} required disabled={form.graded} /></label>
             <button type="submit" disabled={saving}>{saving ? "Saving..." : "List this card"}</button>
           </form>

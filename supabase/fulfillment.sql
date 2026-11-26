@@ -48,3 +48,6 @@ create table if not exists public.shipments (
 
 alter table public.seller_payout_accounts enable row level security;
 alter table public.shipments enable row level security;
+
+grant select, insert, update, delete on table public.shipments to service_role;
+grant select, insert, update, delete on table public.seller_payout_accounts to service_role;

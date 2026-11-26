@@ -13,7 +13,9 @@ export type Product = {
   description?: string | null;
   language?: string | null;
   finish?: string | null;
+  seller_id?: string | null;
   seller_name?: string | null;
+  postage_size?: string | null;
   seller_business?: boolean | null;
   grader?: string | null;
   grade?: string | null;

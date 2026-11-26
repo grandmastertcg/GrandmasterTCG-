@@ -24,7 +24,8 @@ export async function POST(request: NextRequest) {
     const saved = await saveBatchListings(parsed.cards, {
       userId: user.id,
       sellerName: sellerName(user),
-      business: selling === "business"
+      business: selling === "business",
+      postageSize: "large-letter"
     });
     if (!saved.saved) return NextResponse.json({ error: saved.error, skipped: parsed.issues.slice(0, 20) }, { status: 400 });
     return NextResponse.json({ saved: saved.saved, skipped: parsed.issues.slice(0, 20), error: saved.error || undefined });

@@ -1,9 +1,10 @@
 import type { BatchCard } from "@/lib/batch-csv";
+import { postageSize } from "@/lib/shipping";
 import { supabaseAdmin } from "@/lib/supabase";
 
 const LIMIT = 200;
 
-export async function saveBatchListings(cards: BatchCard[], owner: { userId: string | null; sellerName: string | null; business: boolean }) {
+export async function saveBatchListings(cards: BatchCard[], owner: { userId: string | null; sellerName: string | null; business: boolean; postageSize?: string | null }) {
   if (!cards.length) return { saved: 0, error: "No cards in that file could be listed." };
   if (cards.length > LIMIT) return { saved: 0, error: `A batch can list ${LIMIT} cards. This file has ${cards.length}. Split it and upload the rest.` };
 
@@ -28,9 +29,15 @@ export async function saveBatchListings(cards: BatchCard[], owner: { userId: str
       seller_id: owner.userId,
       seller_name: owner.sellerName,
       seller_business: owner.business,
-      language: card.language
+      language: card.language,
+      postage_size: postageSize(owner.postageSize).id
     }));
     let { error } = await db.from("products").insert(chunk);
+    if (error && /postage_size/.test(error.message)) {
+      const withoutPostage = chunk.map(({ postage_size: _postage, ...card }) => card);
+      const retryPostage = await db.from("products").insert(withoutPostage);
+      error = retryPostage.error;
+    }
     if (error && /seller_business|grader|grade|cert_number|back_image_url|seller_id|seller_name|language/.test(error.message)) {
       const plain = chunk.map((card) => ({
         name: card.name,

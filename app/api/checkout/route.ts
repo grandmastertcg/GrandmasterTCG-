@@ -3,7 +3,9 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
 import { userFromRequest } from "@/lib/require-user";
 import { commissionOnSale } from "@/lib/commission";
-import { createPendingOrder } from "@/lib/fulfillment";
+import { createPendingOrder, sellerKey } from "@/lib/fulfillment";
+import { parcelQuote, postageSize, type ParcelCard } from "@/lib/shipping";
+import { saleCondition } from "@/lib/catalog";
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,23 +22,57 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Sign in before you check out." }, { status: 401 });
     }
     const db = supabaseAdmin();
-    const { data: products, error } = await db.from("products")
-      .select("id,name,condition,price_pence,stock,active,seller_id,seller_name").in("id", ids);
-    if (error || !products) throw error || new Error("Products unavailable");
+    const loaded = await db.from("products")
+      .select("id,name,condition,price_pence,stock,active,seller_id,seller_name,postage_size").in("id", ids);
+    const fallback = loaded.error && /postage_size/.test(loaded.error.message)
+      ? await db.from("products").select("id,name,condition,price_pence,stock,active,seller_id,seller_name").in("id", ids)
+      : null;
+    const source = fallback ?? loaded;
+    if (source.error || !source.data) throw source.error || new Error("Products unavailable");
+    const products: Array<{ id: string; name: string; condition: string; price_pence: number; stock: number; active: boolean; seller_id: string | null; seller_name: string | null; postage_size: string | null }> = source.data.map((product) => ({
+      id: product.id,
+      name: product.name,
+      condition: product.condition,
+      price_pence: product.price_pence,
+      stock: product.stock,
+      active: product.active,
+      seller_id: product.seller_id,
+      seller_name: product.seller_name,
+      postage_size: "postage_size" in product && typeof product.postage_size === "string" ? product.postage_size : null
+    }));
     if (products.some((product) => product.seller_id === buyer.id)) {
       return NextResponse.json({ error: "You cannot buy a card you listed." }, { status: 400 });
     }
-    const line_items = body.items.map((item: { product_id?: string; quantity?: number }) => {
+    const cardItems = body.items.map((item: { product_id?: string; quantity?: number }) => {
       const p = products.find(x => x.id === item.product_id);
       const qty = Number(item.quantity);
       if (!p || !p.active || !Number.isInteger(qty) || qty < 1 || qty > p.stock) throw new Error("A card is no longer available in that quantity.");
-      return { price_data: { currency: "gbp", product_data: { name: `${p.name} (${p.condition})` }, unit_amount: p.price_pence }, quantity: qty };
+      return { price_data: { currency: "gbp", product_data: { name: `${p.name} (${p.condition})` }, unit_amount: p.price_pence }, quantity: qty, sellerKey: sellerKey(p.seller_id), sellerName: p.seller_name || "GrandmasterTCG", postageSize: postageSize(p.postage_size).id, graded: saleCondition(p.condition) == null };
     });
+    const postageGroups = new Map<string, { sellerName: string; cards: ParcelCard[] }>();
+    for (const item of cardItems) {
+      const current = postageGroups.get(item.sellerKey) ?? { sellerName: item.sellerName, cards: [] as ParcelCard[] };
+      current.cards.push({ postageSize: item.postageSize, quantity: item.quantity, unitPricePence: item.price_data.unit_amount, graded: item.graded });
+      postageGroups.set(item.sellerKey, current);
+    }
+    const postageItems = [...postageGroups.values()].map((group) => {
+      const quote = parcelQuote(group.cards);
+      const service = quote.insured ? "Special Delivery" : "tracked postage";
+      return {
+        price_data: { currency: "gbp", product_data: { name: `UK ${service} from ${group.sellerName} (${quote.label})` }, unit_amount: quote.pence },
+        quantity: 1
+      };
+    });
+    const line_items = [
+      ...cardItems.map((item: { price_data: { currency: string; product_data: { name: string }; unit_amount: number }; quantity: number }) => ({ price_data: item.price_data, quantity: item.quantity })),
+      ...postageItems
+    ];
     const commissionPence = body.items.reduce((sum: number, item: { product_id?: string; quantity?: number }) => {
       const p = products.find(x => x.id === item.product_id);
       return sum + (p ? commissionOnSale(p.price_pence) * Number(item.quantity) : 0);
     }, 0);
-    const salePence = line_items.reduce((sum: number, item: { price_data: { unit_amount: number }; quantity: number }) => sum + item.price_data.unit_amount * item.quantity, 0);
+    const salePence = cardItems.reduce((sum: number, item: { price_data: { unit_amount: number }; quantity: number }) => sum + item.price_data.unit_amount * item.quantity, 0);
+    const postagePence = postageItems.reduce((sum, item) => sum + item.price_data.unit_amount, 0);
     const stripe = stripeClient();
     const base = process.env.NEXT_PUBLIC_SITE_URL;
     if (!base) throw new Error("Site URL is not configured.");
@@ -52,7 +88,7 @@ export async function POST(req: NextRequest) {
         product_ids: ids.join(","),
         buyer_id: buyer.id,
         commission_pence: String(commissionPence),
-        seller_proceeds_pence: String(salePence - commissionPence)
+        seller_proceeds_pence: String(salePence - commissionPence + postagePence)
       }
     });
     const quantities = body.items.map((item: { product_id?: string; quantity?: number }) => ({
@@ -66,7 +102,7 @@ export async function POST(req: NextRequest) {
       products,
       items: quantities,
       commissionPence,
-      totalPence: salePence
+      totalPence: salePence + postagePence
     });
     return NextResponse.json({ url: session.url });
   } catch (e) {
