@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CONDITIONS, GAMES, POKEMON_NOTES, cardLanguage, conditionNote, gameHue, gameLabel, gbp, languagesFor, saleCondition, sameListingLanguage, type Product } from "@/lib/catalog";
-import { commissionForLine } from "@/lib/commission";
+import { commissionOnBasket } from "@/lib/commission";
 import { PostageRates } from "@/components/postage-rates";
 import { parcelQuote, type ParcelCard } from "@/lib/shipping";
 import { supabase } from "@/lib/supabase-browser";
@@ -173,7 +173,7 @@ export default function Home() {
     return { name: group.name, label: quote.label, pence: quote.pence };
   });
   const postage = postageGroups.reduce((sum, group) => sum + group.pence, 0);
-  const fee = products.reduce((sum, product) => sum + commissionForLine(product.price_pence, cart[product.id] || 0), 0);
+  const fee = commissionOnBasket(products.reduce((sum, product) => sum + product.price_pence * (cart[product.id] || 0), 0));
   const cheapest = visible.length ? Math.min(...visible.map((product) => product.price_pence)) : 0;
   const picks = products
     .filter((product) => product.stock > 0 && product.price_pence <= 500 && (game === "All games" || product.game === game))
@@ -541,7 +541,7 @@ export default function Home() {
                 ))}
                 <p className="mk-total"><span>You pay</span><strong>{gbp(total + postage)}</strong></p>
                 <PostageRates />
-                <p className="mk-fine">Each seller is one parcel, charged once. Up to 10 raw cards stay a Large Letter. More than that, or more than 3 graded cards, moves the parcel to a Small Parcel. A seller’s cards over £75 are sent Special Delivery by 1pm instead, with cover up to £750. GrandmasterTCG keeps {gbp(fee)} from the cards. That is 2% of each card, and never more than £100 per card. The seller also pays the card processing fee. The seller must add tracking within 5 days. Sellers are paid an hour after you confirm the tracked parcel arrived, or 2 days after the courier shows it delivered, unless you dispute or request a refund. You can undo that confirmation for an hour.</p>
+                <p className="mk-fine">Each seller is one parcel, charged once. Up to 10 raw cards stay a Large Letter. More than that, or more than 3 graded cards, moves the parcel to a Small Parcel. A seller’s cards over £75 are sent Special Delivery by 1pm instead, with cover up to £750. GrandmasterTCG keeps {gbp(fee)} from the cards. That is 2% of the basket, once, and never more than £100. The seller also pays the card processing fee. The seller must add tracking within 5 days. Sellers are paid an hour after you confirm the tracked parcel arrived, or 2 days after the courier shows it delivered, unless you dispute or request a refund. You can undo that confirmation for an hour.</p>
                 <button className="mk-checkout" disabled={busy} onClick={checkout}>
                   {busy ? "Starting checkout…" : "Secure checkout"}
                 </button>

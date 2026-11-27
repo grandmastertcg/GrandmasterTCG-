@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
 import { userFromRequest } from "@/lib/require-user";
-import { commissionOnSale } from "@/lib/commission";
+import { commissionOnBasket } from "@/lib/commission";
 import { createPendingOrder, sellerKey } from "@/lib/fulfillment";
 import { parcelQuote, postageSize, type ParcelCard } from "@/lib/shipping";
 import { saleCondition } from "@/lib/catalog";
@@ -67,11 +67,8 @@ export async function POST(req: NextRequest) {
       ...cardItems.map((item: { price_data: { currency: string; product_data: { name: string }; unit_amount: number }; quantity: number }) => ({ price_data: item.price_data, quantity: item.quantity })),
       ...postageItems
     ];
-    const commissionPence = body.items.reduce((sum: number, item: { product_id?: string; quantity?: number }) => {
-      const p = products.find(x => x.id === item.product_id);
-      return sum + (p ? commissionOnSale(p.price_pence) * Number(item.quantity) : 0);
-    }, 0);
     const salePence = cardItems.reduce((sum: number, item: { price_data: { unit_amount: number }; quantity: number }) => sum + item.price_data.unit_amount * item.quantity, 0);
+    const commissionPence = commissionOnBasket(salePence);
     const postagePence = postageItems.reduce((sum, item) => sum + item.price_data.unit_amount, 0);
     const stripe = stripeClient();
     const base = process.env.NEXT_PUBLIC_SITE_URL;

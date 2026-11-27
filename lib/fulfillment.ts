@@ -1,4 +1,4 @@
-import { commissionOnSale } from "@/lib/commission";
+import { commissionOnBasket, splitCommission } from "@/lib/commission";
 import { sendArrivalEmail, sendDeliveredEmail, sendPaidEmail, sendSaleEmails, sendUnpostedRefundEmail } from "@/lib/mail";
 import { saleCondition } from "@/lib/catalog";
 import { deliveryMoment, lookupTracking, parcelQuote } from "@/lib/shipping";
@@ -68,32 +68,36 @@ export async function createPendingOrder(input: {
   const existing = await db.from("orders").select("id").eq("stripe_session_id", input.sessionId).maybeSingle();
   if (existing.data?.id) return existing.data.id;
 
-  const { data: order, error } = await db.from("orders").insert({
-    stripe_session_id: input.sessionId,
-    customer_email: input.email,
-    total_pence: input.totalPence,
-    commission_pence: input.commissionPence,
-    status: "pending",
-    buyer_id: input.buyerId
-  }).select("id").single();
-  if (error || !order) throw new Error(error?.message || "Order could not be saved.");
-
   const lines = input.items.map((item) => {
     const product = input.products.find((row) => row.id === item.product_id);
     if (!product) throw new Error("A card in this basket no longer exists.");
-    const commission = commissionOnSale(product.price_pence) * item.quantity;
     return {
-      order_id: order.id,
+      order_id: "",
       product_id: product.id,
       product_name: product.name,
       quantity: item.quantity,
       unit_price_pence: product.price_pence,
       seller_id: product.seller_id,
       seller_name: product.seller_name || "GrandmasterTCG",
-      commission_pence: commission,
+      commission_pence: 0,
       lineTotal: product.price_pence * item.quantity
     };
   });
+  const basketFee = commissionOnBasket(lines.reduce((sum, line) => sum + line.lineTotal, 0));
+  splitCommission(basketFee, lines.map((line) => line.lineTotal)).forEach((share, index) => {
+    lines[index].commission_pence = share;
+  });
+
+  const { data: order, error } = await db.from("orders").insert({
+    stripe_session_id: input.sessionId,
+    customer_email: input.email,
+    total_pence: input.totalPence,
+    commission_pence: basketFee,
+    status: "pending",
+    buyer_id: input.buyerId
+  }).select("id").single();
+  if (error || !order) throw new Error(error?.message || "Order could not be saved.");
+  for (const line of lines) line.order_id = order.id;
 
   const { error: itemError } = await db.from("order_items").insert(lines.map(({ lineTotal: _lineTotal, ...row }) => row));
   if (itemError) throw new Error(itemError.message);
