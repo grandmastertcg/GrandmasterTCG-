@@ -13,6 +13,7 @@ type Parcel = {
   id: string;
   sellerName: string;
   shipTo?: string;
+  addressLines?: string[];
   carrier: string | null;
   trackingNumber: string | null;
   shippedAt: string | null;
@@ -26,7 +27,9 @@ type Parcel = {
   stripeFeePence?: number;
   paid: boolean;
   payoutError: string | null;
-  items: { name: string; quantity: number }[];
+  commissionPence?: number;
+  createdAt?: string | null;
+  items: { name: string; quantity: number; unitPricePence?: number }[];
 };
 type Listing = {
   id: string;
@@ -283,6 +286,80 @@ export default function AccountPage() {
   return { fee, net: pence - fee };
 }
 
+function needsLabel(parcel: Parcel) {
+  return !parcel.trackingNumber && !parcel.refundedAt && !parcel.holdKind;
+}
+
+function labelLines(parcel: Parcel) {
+  if (parcel.addressLines && parcel.addressLines.length > 0) return parcel.addressLines;
+  return (parcel.shipTo ?? "").split(", ").map((line) => line.trim()).filter(Boolean);
+}
+
+function parcelRef(parcel: Parcel) {
+  return parcel.id.replace(/-/g, "").slice(0, 6).toUpperCase();
+}
+
+function escapeLabel(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[character] ?? character));
+}
+
+function money(pence: number) {
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(pence / 100);
+}
+
+function openPrint(title: string, body: string, style: string) {
+  const sheet = window.open("", "_blank", "noopener,noreferrer");
+  if (!sheet) return false;
+  sheet.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>
+    body { margin: 0; background: #fff; color: #111; font-family: Arial, sans-serif; }
+    h1 { font-size: 16px; margin: 0 0 12px; }
+    @media print { body { padding: 0; } h1 { display: none; } }
+    ${style}
+  </style></head><body><h1>${title}</h1>${body}<script>window.addEventListener("load", () => window.print());</script></body></html>`);
+  sheet.document.close();
+  return true;
+}
+
+function printLabels(parcels: Parcel[]) {
+  const labels = parcels.map((parcel) => {
+    const lines = labelLines(parcel).map((line) => escapeLabel(line)).join("<br>");
+    return `<section class="label"><p class="kind">GrandmasterTCG</p><p class="to">${lines || "No delivery address on this order"}</p><p class="ref">Ref ${escapeLabel(parcelRef(parcel))}</p></section>`;
+  }).join("");
+  return openPrint("Address labels", `<div class="sheet">${labels}</div>`, `
+    .sheet { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .label { background: #fff; color: #111; border: 1px dashed #222; min-height: 150px; padding: 16px; break-inside: avoid; page-break-inside: avoid; }
+    .kind { margin: 0 0 10px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .to { margin: 0; font-size: 18px; line-height: 1.35; }
+    .ref { margin: 14px 0 0; font-size: 12px; letter-spacing: 0.04em; }
+    @media (max-width: 700px) { .sheet { grid-template-columns: 1fr; } }
+  `);
+}
+
+function printInvoices(parcels: Parcel[]) {
+  const invoices = parcels.map((parcel) => {
+    const lines = labelLines(parcel).map((line) => escapeLabel(line)).join("<br>");
+    const cards = parcel.items.reduce((sum, item) => sum + (item.unitPricePence ?? 0) * item.quantity, 0);
+    const postage = parcel.proceedsPence + (parcel.commissionPence ?? 0) - cards;
+    const rows = parcel.items.map((item) => {
+      const line = (item.unitPricePence ?? 0) * item.quantity;
+      return `<tr><td>${escapeLabel(item.name)}</td><td>${item.quantity}</td><td>${escapeLabel(money(item.unitPricePence ?? 0))}</td><td>${escapeLabel(money(line))}</td></tr>`;
+    }).join("");
+    const when = parcel.createdAt ? new Date(parcel.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "";
+    const postageRow = postage > 0 ? `<tr><td colspan="3">Postage</td><td>${escapeLabel(money(postage))}</td></tr>` : "";
+    return `<article class="invoice"><p class="kind">GrandmasterTCG</p><h2>Invoice</h2><p class="meta">Ref ${escapeLabel(parcelRef(parcel))} · ${escapeLabel(parcel.sellerName)}${when ? ` · ${escapeLabel(when)}` : ""}</p><p class="to">${lines || "No delivery address on this order"}</p><table><thead><tr><th>Card</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${rows || "<tr><td colspan=\"4\">Cards</td></tr>"}${postageRow}<tr class="sum"><td colspan="3">Total</td><td>${escapeLabel(money(cards + Math.max(postage, 0)))}</td></tr></tbody></table></article>`;
+  }).join("");
+  return openPrint("Invoices", invoices, `
+    .invoice { background: #fff; color: #111; max-width: 680px; margin: 0 auto 24px; padding: 8px 4px 20px; break-after: page; page-break-after: always; }
+    .kind { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+    h2 { margin: 0 0 6px; font-size: 28px; }
+    .meta, .to { margin: 0 0 14px; line-height: 1.4; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #ddd; }
+    th:nth-child(n+2), td:nth-child(n+2) { text-align: right; }
+    .sum td { font-weight: 700; border-bottom: 0; }
+  `);
+}
+
 function canUndo(parcel: Parcel) {
   if (!parcel.receivedAt || parcel.paid || parcel.refundedAt) return false;
   return Date.now() - new Date(parcel.receivedAt).getTime() < 60 * 60 * 1000;
@@ -379,7 +456,15 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
         <h2>Payouts and parcels</h2>
         <p>Every sale must be posted with tracking within 5 days of payment. If it is not, the buyer is refunded and you are not paid. Once the number is saved, you and the buyer can both open Track parcel and follow where it is. Stripe pays the seller an hour after the buyer presses “I received this”, or 2 days after the courier shows the parcel delivered. If a tracked parcel still has no delivery scan after 7 days, the buyer is asked once, and the seller is paid 2 days later if the buyer stays silent. A dispute or refund request holds that payout until the shop decides it. Your 2% fee stays with the shop.</p>
         <button type="button" onClick={connectPayouts}>{payoutsConnected ? "Open Stripe payouts" : "Set up Stripe payouts"}</button>
-        <h3>Sales to post</h3>
+        <div className="parcel-head">
+          <h3>Sales to post</h3>
+          {sales.some(needsLabel) && (
+            <div className="parcel-actions">
+              <button type="button" onClick={() => { if (!printLabels(sales.filter(needsLabel))) setMessage("Allow pop-up windows to print."); }}>Print labels</button>
+              <button type="button" onClick={() => { if (!printInvoices(sales.filter(needsLabel))) setMessage("Allow pop-up windows to print."); }}>Print invoices</button>
+            </div>
+          )}
+        </div>
         {sales.length === 0 ? <p>No paid sales waiting.</p> : sales.map((parcel) => (
           <article className="my-listing" key={parcel.id}>
             <div>
@@ -392,6 +477,12 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
             <div>
               <b>{gbp(parcel.proceedsPence)}</b>
               {(parcel.stripeFeePence ?? 0) > 0 && <span>Card fee {gbp(parcel.stripeFeePence ?? 0)}</span>}
+              {needsLabel(parcel) && (
+                <div className="parcel-print">
+                  <button type="button" onClick={() => { if (!printLabels([parcel])) setMessage("Allow pop-up windows to print."); }}>Print label</button>
+                  <button type="button" onClick={() => { if (!printInvoices([parcel])) setMessage("Allow pop-up windows to print."); }}>Print invoice</button>
+                </div>
+              )}
               {!parcel.receivedAt && !parcel.refundedAt && (
                 <form className="track-form" onSubmit={(event) => { event.preventDefault(); const entry = tracking[parcel.id] ?? { carrier: parcel.carrier || "Royal Mail", number: parcel.trackingNumber || "" }; parcelAction(parcel.id, "ship", entry.carrier, entry.number); }}>
                   <select value={tracking[parcel.id]?.carrier ?? parcel.carrier ?? "Royal Mail"} onChange={(event) => setTracking({ ...tracking, [parcel.id]: { carrier: event.target.value, number: tracking[parcel.id]?.number ?? parcel.trackingNumber ?? "" } })}>

@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
   const orderIds = [...new Set(shipments.map((shipment) => shipment.order_id))];
   const { data: items } = orderIds.length
-    ? await db.from("order_items").select("order_id,seller_id,product_name,quantity").in("order_id", orderIds)
+    ? await db.from("order_items").select("order_id,seller_id,product_name,quantity,unit_price_pence").in("order_id", orderIds)
     : { data: [] };
 
   const view = shipments.flatMap((shipment) => {
@@ -55,13 +55,16 @@ export async function GET(request: NextRequest) {
     const isBuyer = order?.buyer_id === user.id;
     if (!isSeller && !isBuyer) return [];
     const related = (items ?? []).filter((item) => item.order_id === shipment.order_id && (item.seller_id ?? "shop") === (shipment.seller_id ?? "shop"));
-    const address = order?.shipping_address as { line1?: string; line2?: string; city?: string; postal_code?: string; country?: string } | null;
-    const shipTo = [order?.shipping_name, address?.line1, address?.line2, address?.city, address?.postal_code, address?.country].filter(Boolean).join(", ");
+    const address = order?.shipping_address as { line1?: string; line2?: string; city?: string; state?: string; postal_code?: string; country?: string } | null;
+    const country = address?.country === "GB" ? "United Kingdom" : address?.country;
+    const addressLines = [order?.shipping_name, address?.line1, address?.line2, address?.city, address?.state, address?.postal_code, country].filter((line): line is string => Boolean(line && String(line).trim()));
+    const shipTo = addressLines.join(", ");
     return [{
       id: shipment.id,
       role: isSeller ? "sale" : "purchase",
       sellerName: shipment.seller_name || "GrandmasterTCG",
       shipTo: isSeller ? shipTo : "",
+      addressLines: isSeller ? addressLines : [],
       carrier: shipment.carrier,
       trackingNumber: shipment.tracking_number,
       shippedAt: shipment.shipped_at,
@@ -77,7 +80,7 @@ export async function GET(request: NextRequest) {
       paid: Boolean(shipment.transfer_id) || (shipment.seller_key === "shop" && Boolean(shipment.released_at)),
       payoutError: shipment.payout_error,
       createdAt: order?.created_at ?? shipment.created_at,
-      items: related.map((item) => ({ name: item.product_name, quantity: item.quantity }))
+      items: related.map((item) => ({ name: item.product_name, quantity: item.quantity, unitPricePence: item.unit_price_pence ?? 0 }))
     }];
   });
 
