@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CONDITIONS, GAMES, POKEMON_NOTES, cardLanguage, conditionNote, gameHue, gameLabel, gbp, languagesFor, saleCondition, sameListingLanguage, type Product } from "@/lib/catalog";
+import { CONDITIONS, GAMES, SALE_GAMES, POKEMON_NOTES, cardLanguage, conditionNote, gameHue, gameLabel, gbp, languagesFor, saleCondition, sameListingLanguage, type Product } from "@/lib/catalog";
+import { setsFor } from "@/lib/sets";
 import { commissionOnBasket } from "@/lib/commission";
 import { PostageRates } from "@/components/postage-rates";
-import { bundleSize, parcelQuote, POSTAGE_SIZES, type ParcelCard } from "@/lib/shipping";
+import { bundleSize, parcelQuote, type ParcelCard } from "@/lib/shipping";
 import { supabase } from "@/lib/supabase-browser";
 
 type SortKey = "price-asc" | "price-desc" | "name" | "stock";
@@ -34,6 +35,7 @@ export default function Home() {
   const [language, setLanguage] = useState("Any language");
   const [condition, setCondition] = useState<string>("Any condition");
   const [rarity, setRarity] = useState("Any rarity");
+  const [setName, setSetName] = useState("Any set");
   const [maxPounds, setMaxPounds] = useState("");
   const [sort, setSort] = useState<SortKey>("price-asc");
   const [view, setView] = useState<"list" | "grid">("list");
@@ -113,6 +115,16 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const [setsReady, setSetsReady] = useState(false);
+  useEffect(() => { setSetsReady(true); }, []);
+
+  const sets = useMemo(() => {
+    const known = setsReady ? (game === "All games" ? SALE_GAMES.flatMap((item) => setsFor(item)) : setsFor(game)) : [];
+    const listed = products.filter((product) => game === "All games" || product.game === game).map((product) => product.set_name);
+    const values = new Set([...known, ...listed].filter((value): value is string => Boolean(value)));
+    return ["Any set", ...Array.from(values).sort((a, b) => a.localeCompare(b, "en"))];
+  }, [products, game, setsReady]);
+
   const rarities = useMemo(() => {
     const values = new Set(products.map((product) => product.rarity).filter((value): value is string => Boolean(value)));
     return ["Any rarity", ...Array.from(values).sort()];
@@ -131,6 +143,7 @@ export default function Home() {
       if (condition === "Graded" && !product.grader) return false;
       if (condition !== "Any condition" && condition !== "Graded" && product.condition !== condition && conditionNote(product.condition) !== condition) return false;
       if (rarity !== "Any rarity" && (product.rarity || "Unspecified") !== rarity) return false;
+      if (setName !== "Any set" && product.set_name !== setName) return false;
       if (product.price_pence > maxPence) return false;
       if (!query) return true;
       const haystack = [product.name, product.set_name, product.card_number, product.rarity, product.game, product.language, product.finish]
@@ -146,7 +159,7 @@ export default function Home() {
       if (sort === "stock") return b.stock - a.stock;
       return a.price_pence - b.price_pence;
     });
-  }, [products, q, game, language, condition, rarity, maxPounds, sort]);
+  }, [products, q, game, language, condition, rarity, setName, maxPounds, sort]);
 
   const selected = products.find((product) => product.id === selectedId) ?? null;
   const cheapMates = selected && selected.price_pence <= 500 && saleCondition(selected.condition) != null
@@ -155,6 +168,7 @@ export default function Home() {
         .sort((a, b) => a.price_pence - b.price_pence)
         .slice(0, 6)
     : [];
+  const postageNote = selected && selected.price_pence <= 500 && saleCondition(selected.condition) != null ? postageForSeller(products, cart, selected) : null;
   const copies = selected
     ? products
         .filter((product) => product.stock > 0 && product.name === selected.name && product.game === selected.game && sameListingLanguage(product.game, product.language, selected.language))
@@ -214,6 +228,7 @@ export default function Home() {
     setLanguage("Any language");
     setCondition("Any condition");
     setRarity("Any rarity");
+    setSetName("Any set");
     setMaxPounds("");
     setSort("price-asc");
   }
@@ -279,6 +294,7 @@ export default function Home() {
               className={game === item ? "is-on" : ""}
               onClick={() => {
                 setGame(item);
+                setSetName("Any set");
                 if (language !== "Any language" && !languagesFor(item).includes(language)) setLanguage("Any language");
                 if ((POKEMON_NOTES as readonly string[]).includes(condition) && item !== "Pokémon" && item !== "All games") setCondition("Any condition");
               }}
@@ -344,6 +360,12 @@ export default function Home() {
               Condition
               <select value={condition} onChange={(event) => setCondition(event.target.value)}>
                 {(game === "Pokémon" || game === "All games" ? [...CONDITIONS, ...POKEMON_NOTES] : CONDITIONS).map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              Set
+              <select value={sets.includes(setName) ? setName : "Any set"} onChange={(event) => setSetName(event.target.value)}>
+                {sets.map((item) => <option key={item}>{item}</option>)}
               </select>
             </label>
             <label>
@@ -417,7 +439,7 @@ export default function Home() {
                       <div>
                         <strong>{product.name}</strong>
                         <small className="mk-sub">{[product.rarity, product.finish, languagesFor(product.game).length > 1 ? cardLanguage(product.game, product.language) : product.language].filter(Boolean).join(" · ") || product.game}</small>
-                        <small>Sold by {product.seller_name || "GrandmasterTCG"} · {!product.seller_name || product.seller_business ? "Business seller" : "Private seller"}{bundleSize(product.bundle_size) > 1 ? ` · ${bundleSize(product.bundle_size)} cards` : ""}</small>
+                        <small>Sold by {product.seller_name || "GrandmasterTCG"} · {!product.seller_name || product.seller_business ? "Business seller" : "Private seller"}{sellerRecord(product.completed_parcels)}{bundleSize(product.bundle_size) > 1 ? ` · ${bundleSize(product.bundle_size)} cards` : ""}</small>
                         <small className="mk-mobile-meta">{product.condition}</small>
                         {otherCopies(product) > 0 && <em>{otherCopies(product)} other {otherCopies(product) === 1 ? "copy" : "copies"}</em>}
                       </div>
@@ -448,7 +470,7 @@ export default function Home() {
                     <CardFace product={product} large />
                     <p className="mk-game">{product.game}</p>
                     <h3>{product.name}</h3>
-                    <p>{product.set_name || "Set not listed"} · {product.condition}{bundleSize(product.bundle_size) > 1 ? ` · ${bundleSize(product.bundle_size)} cards` : ""}</p>
+                    <p>{product.set_name || "Set not listed"} · {product.condition}{bundleSize(product.bundle_size) > 1 ? ` · ${bundleSize(product.bundle_size)} cards` : ""}{sellerRecord(product.completed_parcels)}</p>
                     <div>
                       <strong>{gbp(product.price_pence)}</strong>
                       <button className="mk-add" onClick={(event) => { event.stopPropagation(); add(product); }}>Add</button>
@@ -463,7 +485,7 @@ export default function Home() {
         <section className="mk-steps">
           <h2>How buying works</h2>
           <ol>
-            <li><strong>Search the card.</strong> Filter by game, condition, rarity and the most you want to pay.</li>
+            <li><strong>Search the card.</strong> Filter by game, set, condition, rarity and the most you want to pay.</li>
             <li><strong>Read the copy.</strong> Each row is one listing, so a played copy never hides behind a near mint price.</li>
             <li><strong>Check out in GBP.</strong> Stripe takes payment and collects a UK shipping address.</li>
           </ol>
@@ -490,14 +512,14 @@ export default function Home() {
             <p className="mk-meta">
               {[selected.set_name, selected.card_number, selected.rarity, selected.finish].filter(Boolean).join(" · ")}
             </p>
-            <p className="mk-meta">Sold by {selected.seller_name || "GrandmasterTCG"} · {!selected.seller_name || selected.seller_business ? "Business seller" : "Private seller"}{languagesFor(selected.game).length > 1 ? ` · ${cardLanguage(selected.game, selected.language)}` : ""}{bundleSize(selected.bundle_size) > 1 ? ` · bundle of ${bundleSize(selected.bundle_size)} cards` : ""}</p>
+            <p className="mk-meta">Sold by {selected.seller_name || "GrandmasterTCG"} · {!selected.seller_name || selected.seller_business ? "Business seller" : "Private seller"}{sellerRecord(selected.completed_parcels)}{languagesFor(selected.game).length > 1 ? ` · ${cardLanguage(selected.game, selected.language)}` : ""}{bundleSize(selected.bundle_size) > 1 ? ` · bundle of ${bundleSize(selected.bundle_size)} cards` : ""}</p>
             <p className="mk-fine">This card on its own is {parcelQuote([{ postageSize: selected.postage_size, quantity: 1, unitPricePence: selected.price_pence, graded: saleCondition(selected.condition) == null, cardsInListing: bundleSize(selected.bundle_size) }]).label}, {gbp(parcelQuote([{ postageSize: selected.postage_size, quantity: 1, unitPricePence: selected.price_pence, graded: saleCondition(selected.condition) == null, cardsInListing: bundleSize(selected.bundle_size) }]).pence)}. Up to 7 raw cards from the same seller stay a Large Letter. An 8th raw card, a 3rd graded card, or a thicker mix moves the parcel to a Small Parcel, still charged once. Cards from that seller over £75 are sent Special Delivery by 1pm, with cover up to £750. The seller has 5 days to add a tracking number. If they do not, you are refunded. If the card sells out before payment finishes, you are refunded. {!selected.seller_name || selected.seller_business ? "You can cancel for 14 days after the parcel arrives. You pay the return postage unless the card was not as listed." : "This is a private sale, so there is no 14-day cancellation. The card still has to match the listing."}</p>
             <PostageRates />
             {selected.description && <p>{selected.description}</p>}
-            {selected.price_pence <= 500 && saleCondition(selected.condition) != null && (
+            {postageNote && (
               <div className="mk-copies">
                 <h3>More cards from this seller</h3>
-                <p className="mk-fine">Postage from {selected.seller_name || "GrandmasterTCG"} stays {gbp(POSTAGE_SIZES[0].onlinePence)} for up to 7 raw cards. Add another card and you do not pay postage again.</p>
+                <p className="mk-fine">Postage from {selected.seller_name || "GrandmasterTCG"} is {gbp(postageNote.now.pence)}, {postageNote.now.label}. {postageNote.another.pence === postageNote.now.pence ? "Another raw card from this seller does not change that postage." : `Another raw card from this seller changes it to ${gbp(postageNote.another.pence)}, ${postageNote.another.label}.`}</p>
                 {cheapMates.map((product) => (
                   <button key={product.id} onClick={() => add(product)}>
                     <span>{product.name}{bundleSize(product.bundle_size) > 1 ? ` · ${bundleSize(product.bundle_size)} cards` : ""}</span>
@@ -572,6 +594,43 @@ export default function Home() {
       )}
     </div>
   );
+}
+
+function sellerRecord(count: number | undefined) {
+  if (count == null) return "";
+  if (count === 0) return " · New seller";
+  if (count === 1) return " · 1 completed parcel";
+  return ` · ${count} completed parcels`;
+}
+
+function asParcel(product: Product, quantity: number): ParcelCard {
+  return {
+    postageSize: product.postage_size,
+    quantity,
+    unitPricePence: product.price_pence,
+    graded: saleCondition(product.condition) == null,
+    cardsInListing: bundleSize(product.bundle_size)
+  };
+}
+
+function postageForSeller(products: Product[], cart: Record<string, number>, selected: Product) {
+  const key = selected.seller_id || "shop";
+  const cards: ParcelCard[] = [];
+  let seen = false;
+  for (const product of products) {
+    if ((product.seller_id || "shop") !== key) continue;
+    let quantity = cart[product.id] || 0;
+    if (product.id === selected.id) {
+      quantity = Math.max(quantity, 1);
+      seen = true;
+    }
+    if (quantity > 0) cards.push(asParcel(product, quantity));
+  }
+  if (!seen) cards.push(asParcel(selected, 1));
+  return {
+    now: parcelQuote(cards),
+    another: parcelQuote([...cards, { quantity: 1, unitPricePence: 100, graded: false, cardsInListing: 1 }])
+  };
 }
 
 function accountLabelFor(user?: { email?: string | null; user_metadata?: { display_name?: string } }) {

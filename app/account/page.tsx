@@ -8,6 +8,7 @@ import { commissionOnSale } from "@/lib/commission";
 import { PostageRates } from "@/components/postage-rates";
 import { CARRIERS } from "@/lib/shipping";
 import { GRADERS, GRADES } from "@/lib/grades";
+import { setsFor } from "@/lib/sets";
 
 type Parcel = {
   id: string;
@@ -288,6 +289,42 @@ export default function AccountPage() {
   return { fee, net: pence - fee };
 }
 
+function SetField({ game, value, onChange }: { game: string; value: string; onChange: (value: string) => void }) {
+  const known = setsFor(game);
+  const [custom, setCustom] = useState(false);
+  useEffect(() => { setCustom(false); }, [game]);
+  if (known.length === 0) {
+    return <label>Set<input value={value} onChange={(event) => onChange(event.target.value)} required /></label>;
+  }
+  const listed = known.includes(value);
+  return (
+    <>
+      <label>Set
+        <select
+          value={custom ? "__custom" : listed ? value : ""}
+          onChange={(event) => {
+            if (event.target.value === "__custom") {
+              setCustom(true);
+              if (listed) onChange("");
+              return;
+            }
+            setCustom(false);
+            onChange(event.target.value);
+          }}
+          required={!custom}
+        >
+          <option value="">Choose a set</option>
+          {known.map((set) => <option key={set}>{set}</option>)}
+          <option value="__custom">A set that is not in this list</option>
+        </select>
+      </label>
+      {custom && (
+        <label>Set name<input value={value} onChange={(event) => onChange(event.target.value)} required placeholder="Type the set name" /></label>
+      )}
+    </>
+  );
+}
+
 function needsLabel(parcel: Parcel) {
   return !parcel.trackingNumber && !parcel.refundedAt && !parcel.holdKind;
 }
@@ -532,12 +569,14 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
                 const game = event.target.value;
                 const options = languagesFor(game);
                 const conditions = conditionsFor(game);
+                const knownSets = setsFor(game);
                 setForm({
                   ...form,
                   game,
                   language: options.includes(form.language) ? form.language : (options[0] ?? "English"),
                   condition: conditions.includes(form.condition) ? form.condition : "Near Mint (NM)",
-                  condition_note: game === "Pokémon" ? form.condition_note : ""
+                  condition_note: game === "Pokémon" ? form.condition_note : "",
+                  set_name: knownSets.length === 0 || knownSets.includes(form.set_name) ? form.set_name : ""
                 });
               }}>
                 {SALE_GAMES.map((game) => <option key={game}>{game}</option>)}
@@ -550,7 +589,7 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
                 </select>
               </label>
             )}
-            <label>Set<input value={form.set_name} onChange={(event) => setForm({ ...form, set_name: event.target.value })} required /></label>
+            <SetField game={form.game} value={form.set_name} onChange={(set_name) => setForm({ ...form, set_name })} />
             <label>Number<input value={form.card_number} onChange={(event) => setForm({ ...form, card_number: event.target.value })} /></label>
             <label>Rarity<input value={form.rarity} onChange={(event) => setForm({ ...form, rarity: event.target.value })} /></label>
             <label className="check-row"><input type="checkbox" checked={form.graded} onChange={(event) => setForm({ ...form, graded: event.target.checked, stock: event.target.checked ? "1" : form.stock })} /> This card is graded</label>
