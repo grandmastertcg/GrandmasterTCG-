@@ -16,6 +16,7 @@ export type Product = {
   seller_id?: string | null;
   seller_name?: string | null;
   postage_size?: string | null;
+  bundle_size?: number | null;
   seller_business?: boolean | null;
   grader?: string | null;
   grade?: string | null;

@@ -6,10 +6,10 @@ export async function GET() {
   try {
     const db = supabaseAdmin();
     const listed = "id,name,game,set_name,card_number,rarity,condition,grader,grade,cert_number,price_pence,image_url,back_image_url,stock,description,seller_id,seller_name,seller_business,language";
-    const withPostage = await db.from("products").select(`${listed},postage_size`).eq("active", true).gt("stock", 0).order("created_at", { ascending: false });
-    const withSeller = withPostage.error && /postage_size/.test(withPostage.error.message)
+    const withBundle = await db.from("products").select(`${listed},postage_size,bundle_size`).eq("active", true).gt("stock", 0).order("created_at", { ascending: false });
+    const withSeller = withBundle.error && /bundle_size|postage_size/.test(withBundle.error.message)
       ? await db.from("products").select(listed).eq("active", true).gt("stock", 0).order("created_at", { ascending: false })
-      : withPostage;
+      : withBundle;
     if (withSeller.error && /seller_id|seller_name|seller_business|grader|grade|cert_number|back_image_url|language/.test(withSeller.error.message)) {
       const fallback = await db.from("products").select("id,name,game,set_name,card_number,rarity,condition,price_pence,image_url,stock,description").eq("active", true).gt("stock", 0).order("created_at", { ascending: false });
       if (fallback.error) throw fallback.error;

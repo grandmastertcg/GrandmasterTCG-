@@ -4,8 +4,9 @@ import { sellerName, userFromRequest } from "@/lib/require-user";
 import { SALE_GAMES, conditionLabel, conditionNote, languagesFor, saleCondition, withConditionNote } from "@/lib/catalog";
 import { GRADERS, GRADES, gradeLabel } from "@/lib/grades";
 import { ownCardPhoto } from "@/lib/photos";
+import { bundleSize } from "@/lib/shipping";
 
-const columns = "id,name,game,set_name,card_number,rarity,condition,grader,price_pence,stock,image_url,active,seller_business,language,postage_size,created_at";
+const columns = "id,name,game,set_name,card_number,rarity,condition,grader,price_pence,stock,image_url,active,seller_business,language,postage_size,bundle_size,created_at";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,10 +14,10 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
 
     const db = supabaseAdmin();
-    const withPostage = await db.from("products").select(columns).eq("seller_id", user.id).order("created_at", { ascending: false });
-    const loaded = withPostage.error && /postage_size/.test(withPostage.error.message)
-      ? await db.from("products").select(columns.replace(",postage_size", "")).eq("seller_id", user.id).order("created_at", { ascending: false })
-      : withPostage;
+    const withBundle = await db.from("products").select(columns).eq("seller_id", user.id).order("created_at", { ascending: false });
+    const loaded = withBundle.error && /bundle_size|postage_size/.test(withBundle.error.message)
+      ? await db.from("products").select(columns.replace(",postage_size,bundle_size", "")).eq("seller_id", user.id).order("created_at", { ascending: false })
+      : withBundle;
     const { data, error } = loaded;
     if (error && /grader|seller_business|language/.test(error.message)) {
       const fallback = await db.from("products").select("id,name,game,set_name,card_number,rarity,condition,price_pence,stock,image_url,active,created_at").eq("seller_id", user.id).order("created_at", { ascending: false });
@@ -106,6 +107,11 @@ export async function POST(request: NextRequest) {
     if (!Number.isInteger(stock) || stock < 1 || stock > 99) {
       return NextResponse.json({ error: "Stock must be between 1 and 99." }, { status: 400 });
     }
+    const rawBundle = body.bundle_size == null || body.bundle_size === "" ? 1 : Number(body.bundle_size);
+    const cardsInListing = graded ? 1 : bundleSize(rawBundle);
+    if (!graded && rawBundle !== cardsInListing) {
+      return NextResponse.json({ error: "A bundle can contain 1 to 40 cards." }, { status: 400 });
+    }
 
     const selling = body.seller_business === "business" ? "business" : body.seller_business === "private" ? "private" : "";
     if (!selling) {
@@ -130,17 +136,25 @@ export async function POST(request: NextRequest) {
       seller_name: sellerName(user),
       seller_business: selling === "business",
       language,
-        postage_size: "large-letter"
+      postage_size: "large-letter",
+      bundle_size: cardsInListing
     };
     let saved = await supabaseAdmin().from("products").insert(row).select("id").single();
+    if (saved.error && /bundle_size/.test(saved.error.message)) {
+      if (cardsInListing > 1) {
+        return NextResponse.json({ error: "Bundles are not enabled in the database yet." }, { status: 500 });
+      }
+      const { bundle_size: _bundle, ...withoutBundle } = row;
+      saved = await supabaseAdmin().from("products").insert(withoutBundle).select("id").single();
+    }
     if (saved.error && /postage_size/.test(saved.error.message)) {
-      const { postage_size: _postage, ...withoutPostage } = row;
+      const { postage_size: _postage, bundle_size: _bundle, ...withoutPostage } = row;
       saved = await supabaseAdmin().from("products").insert(withoutPostage).select("id").single();
     }
     const { data, error } = saved;
 
     if (error) {
-      const missingColumn = /seller_id|seller_name|seller_business|grader|grade|cert_number|back_image_url|language|postage_size/.test(error.message);
+      const missingColumn = /seller_id|seller_name|seller_business|grader|grade|cert_number|back_image_url|language|postage_size|bundle_size/.test(error.message);
       return NextResponse.json(
         { error: missingColumn ? "Card photos and grades are not enabled in the database yet." : "Unable to save this listing." },
         { status: 500 }

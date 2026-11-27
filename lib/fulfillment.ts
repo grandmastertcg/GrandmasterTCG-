@@ -1,7 +1,7 @@
 import { commissionOnBasket, splitCommission } from "@/lib/commission";
 import { sendArrivalEmail, sendDeliveredEmail, sendPaidEmail, sendSaleEmails, sendUnpostedRefundEmail } from "@/lib/mail";
 import { saleCondition } from "@/lib/catalog";
-import { deliveryMoment, lookupTracking, parcelQuote } from "@/lib/shipping";
+import { bundleSize, deliveryMoment, lookupTracking, parcelQuote } from "@/lib/shipping";
 import { supabaseAdmin } from "@/lib/supabase";
 import { stripeClient } from "@/lib/stripe";
 
@@ -52,6 +52,7 @@ type ProductRow = {
   seller_id: string | null;
   seller_name: string | null;
   postage_size?: string | null;
+  bundle_size?: number | null;
   condition?: string | null;
 };
 
@@ -74,7 +75,7 @@ export async function createPendingOrder(input: {
     return {
       order_id: "",
       product_id: product.id,
-      product_name: product.name,
+      product_name: bundleSize(product.bundle_size) > 1 ? `${product.name} (${bundleSize(product.bundle_size)} cards)` : product.name,
       quantity: item.quantity,
       unit_price_pence: product.price_pence,
       seller_id: product.seller_id,
@@ -119,7 +120,8 @@ export async function createPendingOrder(input: {
           postageSize: product?.postage_size,
           quantity: line.quantity,
           unitPricePence: line.unit_price_pence,
-          graded: saleCondition(product?.condition) == null
+          graded: saleCondition(product?.condition) == null,
+          cardsInListing: bundleSize(product?.bundle_size)
         };
       });
     group.proceeds += parcelQuote(cards).pence;

@@ -17,6 +17,7 @@ create table if not exists public.products (
   seller_id uuid,
   seller_name text,
   postage_size text not null default 'large-letter',
+  bundle_size integer not null default 1 check (bundle_size between 1 and 40),
   created_at timestamptz not null default now()
 );
 

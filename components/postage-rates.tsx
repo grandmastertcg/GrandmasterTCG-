@@ -26,7 +26,7 @@ export function PostageRates() {
         </tbody>
       </table>
       <table className="postage-rates">
-        <caption>Special Delivery Guaranteed by 1pm, when that seller’s cards are over £75. This includes cover up to £750 and arrives the next working day by 1pm. A Large Letter is charged at up to 100g. A Small Parcel, after more than 10 raw cards or 3 graded cards, is charged at up to 500g.</caption>
+        <caption>Special Delivery Guaranteed by 1pm, when that seller’s cards are over £75. This includes cover up to £750 and arrives the next working day by 1pm. A Large Letter under 100g is charged at up to 100g. A thicker parcel, or one over 100g, is charged at up to 500g.</caption>
         <thead>
           <tr>
             <th>Weight</th>

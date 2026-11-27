@@ -20,11 +20,25 @@ export function postageSize(id: string | null | undefined) {
   return POSTAGE_SIZES.find((size) => size.id === id) ?? POSTAGE_SIZES[0];
 }
 
-/** Up to this many raw cards stay a Large Letter. The next card moves the parcel to a Small Parcel. */
-export const RAW_LARGE_LETTER_MAX = 10;
+/** A Large Letter can be no more than 25mm thick. */
+export const LARGE_LETTER_MM = 25;
 
-/** A graded slab is thicker than a raw card. Up to this many stay a Large Letter. */
-export const GRADED_LARGE_LETTER_MAX = 3;
+/** A raw card in a toploader, a sleeved card in a bundle, cardboard and a bag, and a graded slab. */
+const RAW_MM = 3;
+const SLEEVE_MM = 1;
+const PACKING_MM = 3;
+const GRADED_MM = 8;
+const RAW_GRAMS = 8;
+const SLEEVE_GRAMS = 2;
+const PACKING_GRAMS = 20;
+const GRADED_GRAMS = 70;
+const SPECIAL_100G = 100;
+
+export function bundleSize(value: number | null | undefined) {
+  const size = Number(value);
+  if (!Number.isInteger(size) || size < 1) return 1;
+  return Math.min(size, 40);
+}
 
 /** Card value above this, for one seller, is sent Special Delivery Guaranteed by 1pm. */
 export const INSURED_OVER_PENCE = 7500;
@@ -47,6 +61,8 @@ export type ParcelCard = {
   quantity: number;
   unitPricePence: number;
   graded?: boolean;
+  /** Cards inside one copy of the listing. A bundle is a sleeved stack, not one toploader per card. */
+  cardsInListing?: number;
 };
 
 export type ParcelQuote = {
@@ -55,12 +71,12 @@ export type ParcelQuote = {
   insured: boolean;
 };
 
-function specialDelivery(tierId: string, countOnly: boolean, cardPence: number) {
+function specialDelivery(tierId: string, over100g: boolean, cardPence: number) {
   const bandId = tierId === "medium-parcel-10kg"
     ? "kg10"
-    : tierId === "medium-parcel-2kg" || (tierId === "small-parcel" && !countOnly)
+    : tierId === "medium-parcel-2kg"
       ? "kg2"
-      : tierId === "small-parcel"
+      : tierId === "small-parcel" || over100g
         ? "g500"
         : "g100";
   const band = SPECIAL_DELIVERY.find((item) => item.id === bandId) ?? SPECIAL_DELIVERY[0];
@@ -72,18 +88,38 @@ function specialDelivery(tierId: string, countOnly: boolean, cardPence: number) 
   };
 }
 
-/** One parcel per seller. The shop chooses the size. Up to 10 raw cards stay a Large Letter. Over £75 uses Special Delivery. */
+/** One parcel per seller. The shop chooses the size from thickness. Over £75 uses Special Delivery. */
 export function parcelQuote(cards: ParcelCard[]): ParcelQuote {
   if (!cards.length) return { pence: 0, label: "Postage", insured: false };
-  const raw = cards.reduce((sum, card) => sum + (card.graded ? 0 : card.quantity), 0);
-  const graded = cards.reduce((sum, card) => sum + (card.graded ? card.quantity : 0), 0);
   const cardPence = cards.reduce((sum, card) => sum + card.unitPricePence * card.quantity, 0);
-  const bumped = raw > RAW_LARGE_LETTER_MAX || graded > GRADED_LARGE_LETTER_MAX;
-  const tier = postageSize(bumped ? "small-parcel" : "large-letter");
+  let thickness = 0;
+  let grams = 0;
+  let cardsInParcel = 0;
+  for (const card of cards) {
+    const copies = bundleSize(card.cardsInListing);
+    const count = copies * card.quantity;
+    cardsInParcel += count;
+    if (card.graded) {
+      thickness += count * GRADED_MM;
+      grams += count * GRADED_GRAMS;
+    } else if (copies > 1) {
+      thickness += count * SLEEVE_MM;
+      grams += count * SLEEVE_GRAMS;
+    } else {
+      thickness += count * RAW_MM;
+      grams += count * RAW_GRAMS;
+    }
+  }
+  if (cardsInParcel > 0) {
+    thickness += PACKING_MM;
+    grams += PACKING_GRAMS;
+  }
+  const tooThick = thickness > LARGE_LETTER_MM;
+  const tier = postageSize(tooThick ? "small-parcel" : "large-letter");
   if (cardPence <= INSURED_OVER_PENCE) {
     return { pence: tier.onlinePence, label: tier.label, insured: false };
   }
-  const insured = specialDelivery(tier.id, bumped, cardPence);
+  const insured = specialDelivery(tier.id, grams > SPECIAL_100G, cardPence);
   return { pence: insured.pence, label: insured.label, insured: true };
 }
 

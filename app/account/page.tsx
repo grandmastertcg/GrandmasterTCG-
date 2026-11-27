@@ -43,6 +43,7 @@ type Listing = {
   seller_business?: boolean | null;
   language?: string | null;
   postage_size?: string | null;
+  bundle_size?: number | null;
 };
 
 const BASKET_KEY = "gmtcg-basket";
@@ -83,6 +84,7 @@ export default function AccountPage() {
     cert_number: "",
     price: "",
     stock: "1",
+    bundle_size: "1",
     seller_business: "",
     language: "English"
   });
@@ -210,7 +212,7 @@ export default function AccountPage() {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Listing could not be saved.");
-      setForm({ ...form, name: "", set_name: "", card_number: "", rarity: "", cert_number: "", price: "" });
+      setForm({ ...form, name: "", set_name: "", card_number: "", rarity: "", cert_number: "", price: "", bundle_size: "1" });
       setFrontPhoto(null);
       setBackPhoto(null);
       setFrontPreview("");
@@ -610,8 +612,10 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
             </label>
             <label>Price (£)<input inputMode="decimal" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required /></label>
             <PostageRates />
-            <p>You do not choose the postage. The shop adds it for the buyer. Cards from you in the same order go in one parcel and the buyer pays postage once. Up to 10 raw cards stay a Large Letter. An 11th raw card, or a 4th graded card, moves the parcel to a Small Parcel. If your cards in the order are over £75, the buyer pays Special Delivery by 1pm instead, and that includes cover up to £750. Buy the label online. For tracked postage, a Post Office counter costs more, and that difference is yours. The postage the buyer paid is added to your payout.</p>
+            <p>You do not choose the postage. The shop adds it for the buyer. Cards from you in the same order go in one parcel and the buyer pays postage once. A Large Letter can be no more than 25mm thick. Up to 7 raw cards stay a Large Letter. An 8th raw card, a 3rd graded card, or a mix that is too thick, such as 5 raw cards and 1 graded card, moves the parcel to a Small Parcel. If your cards in the order are over £75, the buyer pays Special Delivery by 1pm instead, at the 100g price when the parcel is under 100g, or the 500g price when it is thicker or heavier. That includes cover up to £750. Buy the label online. For tracked postage, a Post Office counter costs more, and that difference is yours. The postage the buyer paid is added to your payout.</p>
             {priceSplit(form.price) && <p>You receive {gbp(priceSplit(form.price)!.net)} before the card processing fee when this is the only card in the basket. The shop keeps 2% of the cards in the basket, once, and never more than £100. Postage is added on top when the buyer pays, and it is included in your payout.</p>}
+            <label>Cards in this listing<input type="number" min={1} max={40} value={form.graded ? "1" : form.bundle_size} onChange={(event) => setForm({ ...form, bundle_size: event.target.value })} required disabled={form.graded} /></label>
+            <p>Use 1 for a single card. Use 10 to sell ten commons as one bundle, for one price. A bundle is posted as one stack, with one tracking number. The buyer pays postage once for all of your cards in the order.</p>
             <label>Quantity<input type="number" min={1} max={99} value={form.graded ? "1" : form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} required disabled={form.graded} /></label>
             <button type="submit" disabled={saving}>{saving ? "Saving..." : "List this card"}</button>
           </form>
@@ -652,7 +656,7 @@ async function parcelAction(id: string, action: "ship" | "receive" | "undo", car
             <article className="my-listing" key={listing.id}>
               <div>
                 <strong>{listing.name}</strong>
-                <span>{listing.game}{languagesFor(listing.game).length > 1 ? ` · ${cardLanguage(listing.game, listing.language)}` : ""} · {conditionLabel(listing.condition)} · {listing.seller_business ? "Business seller" : "Private seller"} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"} · you receive {gbp(listing.price_pence - commissionOnSale(listing.price_pence))} when this is the only card in the basket</span>
+                <span>{listing.game}{languagesFor(listing.game).length > 1 ? ` · ${cardLanguage(listing.game, listing.language)}` : ""} · {conditionLabel(listing.condition)}{(listing.bundle_size ?? 1) > 1 ? ` · bundle of ${listing.bundle_size} cards` : ""} · {listing.seller_business ? "Business seller" : "Private seller"} · {listing.active && listing.stock > 0 ? `${listing.stock} in stock` : "Removed"} · you receive {gbp(listing.price_pence - commissionOnSale(listing.price_pence))} when this is the only card in the basket</span>
               </div>
               <div>
                 <b>{gbp(listing.price_pence)}</b>

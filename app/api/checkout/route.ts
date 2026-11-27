@@ -4,7 +4,7 @@ import { stripeClient } from "@/lib/stripe";
 import { userFromRequest } from "@/lib/require-user";
 import { commissionOnBasket } from "@/lib/commission";
 import { createPendingOrder, sellerKey } from "@/lib/fulfillment";
-import { parcelQuote, postageSize, type ParcelCard } from "@/lib/shipping";
+import { bundleSize, parcelQuote, postageSize, type ParcelCard } from "@/lib/shipping";
 import { saleCondition } from "@/lib/catalog";
 
 export async function POST(req: NextRequest) {
@@ -22,14 +22,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Sign in before you check out." }, { status: 401 });
     }
     const db = supabaseAdmin();
-    const loaded = await db.from("products")
-      .select("id,name,condition,price_pence,stock,active,seller_id,seller_name,postage_size").in("id", ids);
-    const fallback = loaded.error && /postage_size/.test(loaded.error.message)
+    const withBundle = await db.from("products").select("id,name,condition,price_pence,stock,active,seller_id,seller_name,postage_size,bundle_size").in("id", ids);
+    const loaded = withBundle.error && /bundle_size|postage_size/.test(withBundle.error.message)
       ? await db.from("products").select("id,name,condition,price_pence,stock,active,seller_id,seller_name").in("id", ids)
-      : null;
-    const source = fallback ?? loaded;
-    if (source.error || !source.data) throw source.error || new Error("Products unavailable");
-    const products: Array<{ id: string; name: string; condition: string; price_pence: number; stock: number; active: boolean; seller_id: string | null; seller_name: string | null; postage_size: string | null }> = source.data.map((product) => ({
+      : withBundle;
+    if (loaded.error || !loaded.data) throw loaded.error || new Error("Products unavailable");
+    const products: Array<{ id: string; name: string; condition: string; price_pence: number; stock: number; active: boolean; seller_id: string | null; seller_name: string | null; postage_size: string | null; bundle_size: number }> = loaded.data.map((product) => ({
       id: product.id,
       name: product.name,
       condition: product.condition,
@@ -38,7 +36,8 @@ export async function POST(req: NextRequest) {
       active: product.active,
       seller_id: product.seller_id,
       seller_name: product.seller_name,
-      postage_size: "postage_size" in product && typeof product.postage_size === "string" ? product.postage_size : null
+      postage_size: "postage_size" in product && typeof product.postage_size === "string" ? product.postage_size : null,
+      bundle_size: "bundle_size" in product && typeof product.bundle_size === "number" ? bundleSize(product.bundle_size) : 1
     }));
     if (products.some((product) => product.seller_id === buyer.id)) {
       return NextResponse.json({ error: "You cannot buy a card you listed." }, { status: 400 });
@@ -47,12 +46,13 @@ export async function POST(req: NextRequest) {
       const p = products.find(x => x.id === item.product_id);
       const qty = Number(item.quantity);
       if (!p || !p.active || !Number.isInteger(qty) || qty < 1 || qty > p.stock) throw new Error("A card is no longer available in that quantity.");
-      return { price_data: { currency: "gbp", product_data: { name: `${p.name} (${p.condition})` }, unit_amount: p.price_pence }, quantity: qty, sellerKey: sellerKey(p.seller_id), sellerName: p.seller_name || "GrandmasterTCG", postageSize: postageSize(p.postage_size).id, graded: saleCondition(p.condition) == null };
+      const title = p.bundle_size > 1 ? `${p.name} (${p.bundle_size} cards)` : p.name;
+      return { price_data: { currency: "gbp", product_data: { name: `${title} (${p.condition})` }, unit_amount: p.price_pence }, quantity: qty, sellerKey: sellerKey(p.seller_id), sellerName: p.seller_name || "GrandmasterTCG", postageSize: postageSize(p.postage_size).id, graded: saleCondition(p.condition) == null, cardsInListing: p.bundle_size };
     });
     const postageGroups = new Map<string, { sellerName: string; cards: ParcelCard[] }>();
     for (const item of cardItems) {
       const current = postageGroups.get(item.sellerKey) ?? { sellerName: item.sellerName, cards: [] as ParcelCard[] };
-      current.cards.push({ postageSize: item.postageSize, quantity: item.quantity, unitPricePence: item.price_data.unit_amount, graded: item.graded });
+      current.cards.push({ postageSize: item.postageSize, quantity: item.quantity, unitPricePence: item.price_data.unit_amount, graded: item.graded, cardsInListing: item.cardsInListing });
       postageGroups.set(item.sellerKey, current);
     }
     const postageItems = [...postageGroups.values()].map((group) => {

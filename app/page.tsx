@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CONDITIONS, GAMES, POKEMON_NOTES, cardLanguage, conditionNote, gameHue, gameLabel, gbp, languagesFor, saleCondition, sameListingLanguage, type Product } from "@/lib/catalog";
 import { commissionOnBasket } from "@/lib/commission";
 import { PostageRates } from "@/components/postage-rates";
-import { parcelQuote, type ParcelCard } from "@/lib/shipping";
+import { bundleSize, parcelQuote, POSTAGE_SIZES, type ParcelCard } from "@/lib/shipping";
 import { supabase } from "@/lib/supabase-browser";
 
 type SortKey = "price-asc" | "price-desc" | "name" | "stock";
@@ -149,6 +149,12 @@ export default function Home() {
   }, [products, q, game, language, condition, rarity, maxPounds, sort]);
 
   const selected = products.find((product) => product.id === selectedId) ?? null;
+  const cheapMates = selected && selected.price_pence <= 500 && saleCondition(selected.condition) != null
+    ? products
+        .filter((product) => product.id !== selected.id && product.stock > 0 && (product.seller_id || "shop") === (selected.seller_id || "shop") && product.price_pence <= 500 && saleCondition(product.condition) != null)
+        .sort((a, b) => a.price_pence - b.price_pence)
+        .slice(0, 6)
+    : [];
   const copies = selected
     ? products
         .filter((product) => product.stock > 0 && product.name === selected.name && product.game === selected.game && sameListingLanguage(product.game, product.language, selected.language))
@@ -164,7 +170,8 @@ export default function Home() {
       postageSize: product.postage_size,
       quantity: cart[product.id] || 0,
       unitPricePence: product.price_pence,
-      graded: saleCondition(product.condition) == null
+      graded: saleCondition(product.condition) == null,
+      cardsInListing: bundleSize(product.bundle_size)
     });
     groups.set(key, current);
     return groups;
@@ -410,7 +417,7 @@ export default function Home() {
                       <div>
                         <strong>{product.name}</strong>
                         <small className="mk-sub">{[product.rarity, product.finish, languagesFor(product.game).length > 1 ? cardLanguage(product.game, product.language) : product.language].filter(Boolean).join(" · ") || product.game}</small>
-                        <small>Sold by {product.seller_name || "GrandmasterTCG"} · {!product.seller_name || product.seller_business ? "Business seller" : "Private seller"}</small>
+                        <small>Sold by {product.seller_name || "GrandmasterTCG"} · {!product.seller_name || product.seller_business ? "Business seller" : "Private seller"}{bundleSize(product.bundle_size) > 1 ? ` · ${bundleSize(product.bundle_size)} cards` : ""}</small>
                         <small className="mk-mobile-meta">{product.condition}</small>
                         {otherCopies(product) > 0 && <em>{otherCopies(product)} other {otherCopies(product) === 1 ? "copy" : "copies"}</em>}
                       </div>
@@ -441,7 +448,7 @@ export default function Home() {
                     <CardFace product={product} large />
                     <p className="mk-game">{product.game}</p>
                     <h3>{product.name}</h3>
-                    <p>{product.set_name || "Set not listed"} · {product.condition}</p>
+                    <p>{product.set_name || "Set not listed"} · {product.condition}{bundleSize(product.bundle_size) > 1 ? ` · ${bundleSize(product.bundle_size)} cards` : ""}</p>
                     <div>
                       <strong>{gbp(product.price_pence)}</strong>
                       <button className="mk-add" onClick={(event) => { event.stopPropagation(); add(product); }}>Add</button>
@@ -483,10 +490,22 @@ export default function Home() {
             <p className="mk-meta">
               {[selected.set_name, selected.card_number, selected.rarity, selected.finish].filter(Boolean).join(" · ")}
             </p>
-            <p className="mk-meta">Sold by {selected.seller_name || "GrandmasterTCG"} · {!selected.seller_name || selected.seller_business ? "Business seller" : "Private seller"}{languagesFor(selected.game).length > 1 ? ` · ${cardLanguage(selected.game, selected.language)}` : ""}</p>
-            <p className="mk-fine">This card on its own is {parcelQuote([{ postageSize: selected.postage_size, quantity: 1, unitPricePence: selected.price_pence, graded: saleCondition(selected.condition) == null }]).label}, {gbp(parcelQuote([{ postageSize: selected.postage_size, quantity: 1, unitPricePence: selected.price_pence, graded: saleCondition(selected.condition) == null }]).pence)}. Up to 10 raw cards from the same seller stay a Large Letter. An 11th raw card moves the parcel to a Small Parcel, still charged once. Cards from that seller over £75 are sent Special Delivery by 1pm, with cover up to £750. The seller has 5 days to add a tracking number. If they do not, you are refunded. If the card sells out before payment finishes, you are refunded. {!selected.seller_name || selected.seller_business ? "You can cancel for 14 days after the parcel arrives. You pay the return postage unless the card was not as listed." : "This is a private sale, so there is no 14-day cancellation. The card still has to match the listing."}</p>
+            <p className="mk-meta">Sold by {selected.seller_name || "GrandmasterTCG"} · {!selected.seller_name || selected.seller_business ? "Business seller" : "Private seller"}{languagesFor(selected.game).length > 1 ? ` · ${cardLanguage(selected.game, selected.language)}` : ""}{bundleSize(selected.bundle_size) > 1 ? ` · bundle of ${bundleSize(selected.bundle_size)} cards` : ""}</p>
+            <p className="mk-fine">This card on its own is {parcelQuote([{ postageSize: selected.postage_size, quantity: 1, unitPricePence: selected.price_pence, graded: saleCondition(selected.condition) == null, cardsInListing: bundleSize(selected.bundle_size) }]).label}, {gbp(parcelQuote([{ postageSize: selected.postage_size, quantity: 1, unitPricePence: selected.price_pence, graded: saleCondition(selected.condition) == null, cardsInListing: bundleSize(selected.bundle_size) }]).pence)}. Up to 7 raw cards from the same seller stay a Large Letter. An 8th raw card, a 3rd graded card, or a thicker mix moves the parcel to a Small Parcel, still charged once. Cards from that seller over £75 are sent Special Delivery by 1pm, with cover up to £750. The seller has 5 days to add a tracking number. If they do not, you are refunded. If the card sells out before payment finishes, you are refunded. {!selected.seller_name || selected.seller_business ? "You can cancel for 14 days after the parcel arrives. You pay the return postage unless the card was not as listed." : "This is a private sale, so there is no 14-day cancellation. The card still has to match the listing."}</p>
             <PostageRates />
             {selected.description && <p>{selected.description}</p>}
+            {selected.price_pence <= 500 && saleCondition(selected.condition) != null && (
+              <div className="mk-copies">
+                <h3>More cards from this seller</h3>
+                <p className="mk-fine">Postage from {selected.seller_name || "GrandmasterTCG"} stays {gbp(POSTAGE_SIZES[0].onlinePence)} for up to 7 raw cards. Add another card and you do not pay postage again.</p>
+                {cheapMates.map((product) => (
+                  <button key={product.id} onClick={() => add(product)}>
+                    <span>{product.name}{bundleSize(product.bundle_size) > 1 ? ` · ${bundleSize(product.bundle_size)} cards` : ""}</span>
+                    <b>{gbp(product.price_pence)}</b>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="mk-offer">
               <div>
                 <span>{selected.condition}{selected.cert_number ? ` · Cert ${selected.cert_number}` : ""}</span>
@@ -524,7 +543,7 @@ export default function Home() {
                   {products.filter((product) => cart[product.id]).map((product) => (
                     <li key={product.id}>
                       <div>
-                        <strong>{product.name}</strong>
+                        <strong>{product.name}{bundleSize(product.bundle_size) > 1 ? ` · ${bundleSize(product.bundle_size)} cards` : ""}</strong>
                         <small>{product.condition} · {gbp(product.price_pence)}</small>
                       </div>
                       <div className="mk-qty">
@@ -541,7 +560,7 @@ export default function Home() {
                 ))}
                 <p className="mk-total"><span>You pay</span><strong>{gbp(total + postage)}</strong></p>
                 <PostageRates />
-                <p className="mk-fine">Each seller is one parcel, charged once. Up to 10 raw cards stay a Large Letter. More than that, or more than 3 graded cards, moves the parcel to a Small Parcel. A seller’s cards over £75 are sent Special Delivery by 1pm instead, with cover up to £750. GrandmasterTCG keeps {gbp(fee)} from the cards. That is 2% of the basket, once, and never more than £100. The seller also pays the card processing fee. The seller must add tracking within 5 days. Sellers are paid an hour after you confirm the tracked parcel arrived, or 2 days after the courier shows it delivered, unless you dispute or request a refund. You can undo that confirmation for an hour.</p>
+                <p className="mk-fine">Each seller is one parcel, charged once. Up to 7 raw cards stay a Large Letter. An 8th raw card, a 3rd graded card, or a thicker mix moves the parcel to a Small Parcel. A seller’s cards over £75 are sent Special Delivery by 1pm instead, with cover up to £750. GrandmasterTCG keeps {gbp(fee)} from the cards. That is 2% of the basket, once, and never more than £100. The seller also pays the card processing fee. The seller must add tracking within 5 days. Sellers are paid an hour after you confirm the tracked parcel arrived, or 2 days after the courier shows it delivered, unless you dispute or request a refund. You can undo that confirmation for an hour.</p>
                 <button className="mk-checkout" disabled={busy} onClick={checkout}>
                   {busy ? "Starting checkout…" : "Secure checkout"}
                 </button>
