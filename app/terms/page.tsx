@@ -59,6 +59,12 @@ export default function TermsPage() {
       <h2>The shop’s own cards</h2>
       <p>Some cards are sold by GrandmasterTCG rather than another member. Those sales still need tracking. The payment stays with the shop, because there is no separate seller to pay. A dispute or refund request on a shop parcel is handled in the same way.</p>
 
+      <h2>What is outside the shop’s control</h2>
+      <p>GrandmasterTCG runs the marketplace. A member sells their own card. That seller is responsible for the listing, the photos, the condition, the card they post, and sending it to the address on the order. The shop is not the seller of a member’s card.</p>
+      <p>The shop is not responsible for something it does not control. That includes a courier being late, losing a scan, or damaging a parcel after it has been posted. It includes Royal Mail or another courier changing a price, a service, or a delivery time. It includes the website, email, or Stripe being unavailable for a reason outside the shop. It includes the value of a card going up or down after a sale. It includes a game name or a card name, which belongs to its owner.</p>
+      <p>The shop is also not responsible for a loss that follows on from one of those things, such as a missed event or a card being worth less later. Where the law allows a limit, the shop’s responsibility for a member’s sale is limited to the amount that buyer paid the shop for that parcel.</p>
+      <p>This does not remove a refund the terms already give. A parcel with no tracking in 5 days, a card that sold out, or a refund the shop agrees after a dispute still goes back to the buyer. It does not remove a buyer’s rights against a business seller, or against GrandmasterTCG on a card the shop itself sold. It does not remove liability for death or personal injury caused by negligence, or for fraud. A term cannot take away a right that the law does not allow the shop to take away.</p>
+
       <h2>What the shop keeps</h2>
       <p>The shop keeps your display name, email, listings, photos, orders, tracking numbers, and the UK delivery name and address Stripe collects. That address is shown to the seller of the parcel so they can post it, and to the shop when the shop is the seller. The seller’s sale email includes that address so they can post the card. Stripe handles the card payment and emails the buyer a receipt. The shop does not show your card number on the account page.</p>
 
